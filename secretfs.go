@@ -87,12 +87,12 @@ func (sfs secretFs) Create(name string) (afero.File, error) {
 // Mkdir creates a new, empty secret
 // return an error if any happens.
 func (sfs secretFs) Mkdir(name string, perm os.FileMode) error {
-	p, err := NewPath(name)
+	p, err := newSecretPath(name)
 	if err != nil {
 		return err
 	}
 
-	if !p.IsDir() {
+	if !p.isDir() {
 		return fmt.Errorf("%s is not a directory/secret", name)
 	}
 
@@ -208,7 +208,7 @@ func (sfs secretFs) Stat(name string) (os.FileInfo, error) {
 		name: name,
 	}
 
-	p, err := NewPath(name)
+	p, err := newSecretPath(name)
 	if err != nil {
 		return nil, err
 	}

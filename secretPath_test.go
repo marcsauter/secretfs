@@ -1,9 +1,8 @@
-package secretfs_test
+package secretfs
 
 import (
 	"testing"
 
-	"github.com/marcsauter/secretfs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,7 +20,7 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range invalid {
-			p, err := secretfs.NewPath(n)
+			p, err := newSecretPath(n)
 			assert.Error(t, err)
 			assert.Nil(t, p)
 		}
@@ -40,7 +39,7 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range valid {
-			p, err := secretfs.NewPath(n)
+			p, err := newSecretPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 		}
@@ -55,10 +54,10 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range validDir {
-			p, err := secretfs.NewPath(n)
+			p, err := newSecretPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
-			assert.True(t, p.IsDir())
+			assert.True(t, p.isDir())
 		}
 	})
 
@@ -71,10 +70,10 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range validDir {
-			p, err := secretfs.NewPath(n)
+			p, err := newSecretPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
-			assert.False(t, p.IsDir())
+			assert.False(t, p.isDir())
 		}
 	})
 }
