@@ -66,16 +66,16 @@ func (sfs secretFs) Create(name string) (afero.File, error) {
 	}
 
 	if si.IsDir() {
-		return nil, fmt.Errorf("%s is a directory", name) // TODO: standard error
+		return nil, fmt.Errorf("%s is a directory", name) // TODO: standard error?
 	}
 
-	sec := si.Sys().(*corev1.Secret)
-	sec.Data[si.Name()] = []byte{}
+	s := si.Sys().(*corev1.Secret)
+	s.Data[si.Name()] = []byte{}
 
 	ctx, cancel := sfs.context()
 	defer cancel()
 
-	resp, err := sfs.c.CoreV1().Secrets(sec.Namespace).Create(ctx, sec, metav1.CreateOptions{})
+	resp, err := sfs.c.CoreV1().Secrets(s.Namespace).Create(ctx, s, metav1.CreateOptions{})
 
 	return &secretEntry{
 		secret: resp,
@@ -132,38 +132,79 @@ func (sfs secretFs) OpenFile(name string, flag int, perm os.FileMode) (afero.Fil
 	return nil, nil
 }
 
-// Remove removes a file identified by name, returning an error, if any
-// happens.
+// Remove removes an empty secret or a key identified by name.
 func (sfs secretFs) Remove(name string) error {
-	_, err := sfs.Stat(name)
+	p, err := newSecretPath(name)
 	if err != nil {
 		return err
 	}
 
-	// file or dir
-	// check annotation
+	si, err := sfs.Stat(name)
+	if err != nil {
+		return err
+	}
 
-	_, cancel := sfs.context()
+	s := si.Sys().(*corev1.Secret)
+	if !checkAnnotaion(s) {
+		return fmt.Errorf("not managed with secretfs")
+	}
+
+	if si.IsDir() && len(s.Data) != 0 {
+		return fmt.Errorf("secret is not empty")
+	}
+
+	ctx, cancel := sfs.context()
 	defer cancel()
 
-	return nil
+	if si.IsDir() {
+		return sfs.c.CoreV1().Secrets(s.Namespace).Delete(ctx, s.Name, metav1.DeleteOptions{})
+	}
+
+	if _, ok := s.Data[p[KEY]]; !ok {
+		return afero.ErrFileNotFound
+	}
+
+	delete(s.Data, p[KEY])
+
+	_, err = sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
+
+	return err
 }
 
-// RemoveAll removes a directory path and any children it contains. It
-// does not fail if the path does not exist (return nil).
+// RemoveAll removes a secret or key with all it contains.
+// It does not fail if the path does not exist (return nil).
 func (sfs secretFs) RemoveAll(path string) error {
-	_, err := sfs.Stat(path)
+	p, err := newSecretPath(path)
 	if err != nil {
 		return err
 	}
 
-	// file or dir
-	// check annotation
+	si, err := sfs.Stat(path)
+	if err != nil {
+		if err == afero.ErrFileNotFound {
+			return nil
+		}
 
-	_, cancel := sfs.context()
+		return err
+	}
+
+	s := si.Sys().(*corev1.Secret)
+	if !checkAnnotaion(s) {
+		return fmt.Errorf("not managed with secretfs")
+	}
+
+	ctx, cancel := sfs.context()
 	defer cancel()
 
-	return nil
+	if si.IsDir() {
+		return sfs.c.CoreV1().Secrets(s.Namespace).Delete(ctx, s.Name, metav1.DeleteOptions{})
+	}
+
+	delete(s.Data, p[KEY])
+
+	_, err = sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
+
+	return err
 }
 
 // Rename renames (moves) oldpath to newpath. If newpath already exists and is not a directory, Rename replaces it.

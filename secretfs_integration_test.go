@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitVal)
 }
 
-func TestConnection(t *testing.T) {
+func TestCreateRemoveSecret(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}
@@ -53,16 +53,21 @@ func TestConnection(t *testing.T) {
 	sfs := secretfs.New(clientset)
 	require.NotNil(t, sfs)
 
-	assert.Equal(t, "SecretFS", sfs.Name())
+	t.Run("create and remove a secret", func(t *testing.T) {
+		assert.NoError(t, sfs.Mkdir("default/testsecret", os.FileMode(0)))
 
-	var err error
+		assert.Error(t, sfs.Mkdir("default/testsecret", os.FileMode(0)))
 
-	err = sfs.Mkdir("default/testsecret", os.FileMode(0))
-	assert.NoError(t, err)
+		assert.NoError(t, sfs.Remove("default/testsecret"))
 
-	err = sfs.Mkdir("default/testsecret", os.FileMode(0))
-	assert.Error(t, err)
+		assert.Error(t, sfs.Remove("default/testsecret"))
+	})
 
-	err = sfs.RemoveAll("default/testsecret")
-	assert.Error(t, err)
+	t.Run("create and remove a secret with RemoveAll", func(t *testing.T) {
+		assert.NoError(t, sfs.Mkdir("default/testsecret1", os.FileMode(0)))
+
+		assert.NoError(t, sfs.RemoveAll("default/testsecret1"))
+
+		assert.NoError(t, sfs.RemoveAll("default/testsecret1"))
+	})
 }
