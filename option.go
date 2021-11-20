@@ -10,6 +10,7 @@ import (
 type Option func(*secretFs)
 
 // WithSecretPrefix configures a custom secret prefix
+// TODO: does this belong here?
 func WithSecretPrefix(x string) Option {
 	return func(s *secretFs) {
 		s.prefix = x
@@ -17,6 +18,7 @@ func WithSecretPrefix(x string) Option {
 }
 
 // WithSecretSuffix configures a custom secret prefix
+// TODO: does this belong here?
 func WithSecretSuffix(x string) Option {
 	return func(s *secretFs) {
 		s.suffix = x

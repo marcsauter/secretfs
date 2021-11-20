@@ -23,10 +23,6 @@ import (
 )
 
 const (
-	// DefaultSecretPrefix for each secret name
-	DefaultSecretPrefix = "" //nolint:gosec // no credentials
-	// DefaultSecretSuffix for each secret name
-	DefaultSecretSuffix = ""
 	// DefaultRequestTimeout for k8s requests
 	DefaultRequestTimeout = 5 * time.Second
 )
@@ -47,8 +43,6 @@ func New(c *kubernetes.Clientset, opts ...Option) afero.Fs {
 	s := &secretFs{
 		c:       c,
 		timeout: DefaultRequestTimeout,
-		prefix:  DefaultSecretPrefix,
-		suffix:  DefaultSecretSuffix,
 		l:       zap.NewNop().Sugar(),
 	}
 
@@ -116,6 +110,7 @@ func (sfs secretFs) Mkdir(name string, perm os.FileMode) error {
 
 	req := &corev1.Secret{}
 	req.Name = p[SECRET]
+	addAnnotation(req)
 
 	_, err = sfs.c.CoreV1().Secrets(p[NAMESPACE]).Create(ctx, req, metav1.CreateOptions{})
 
@@ -146,6 +141,7 @@ func (sfs secretFs) Remove(name string) error {
 	}
 
 	// file or dir
+	// check annotation
 
 	_, cancel := sfs.context()
 	defer cancel()
@@ -162,6 +158,7 @@ func (sfs secretFs) RemoveAll(path string) error {
 	}
 
 	// file or dir
+	// check annotation
 
 	_, cancel := sfs.context()
 	defer cancel()

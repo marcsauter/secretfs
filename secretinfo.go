@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// secretInfo implements os.FileInfo
 type secretInfo struct {
 	name   string
 	isDir  bool
