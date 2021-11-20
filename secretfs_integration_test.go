@@ -1,7 +1,10 @@
 package secretfs_test
 
 import (
+	"log"
 	"os"
+	"os/user"
+	"path/filepath"
 	"testing"
 
 	"github.com/marcsauter/secretfs"
@@ -11,24 +14,48 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const (
-	kubeconfig = "./testdata/.kubeconfig"
+var (
+	clientset *kubernetes.Clientset
 )
 
-func TestConnection(t *testing.T) {
-	t.SkipNow()
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	assert.NoError(t, err)
-	require.NotNil(t, config)
+func TestMain(m *testing.M) {
+	u, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	clientset, err := kubernetes.NewForConfig(config)
-	assert.NoError(t, err)
-	require.NotNil(t, clientset)
+	c, err := clientcmd.BuildConfigFromFlags("", filepath.Join(u.HomeDir, ".kube", "config"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cs, err := kubernetes.NewForConfig(c)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := cs.DiscoveryClient.ServerVersion(); err != nil {
+		log.Fatalf("start kind first: %v", err)
+	}
+
+	clientset = cs
+
+	exitVal := m.Run()
+
+	os.Exit(exitVal)
+}
+
+func TestConnection(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
 
 	sfs := secretfs.New(clientset)
 	require.NotNil(t, sfs)
 
 	assert.Equal(t, "SecretFS", sfs.Name())
+
+	var err error
 
 	err = sfs.Mkdir("default/testsecret", os.FileMode(0))
 	assert.NoError(t, err)

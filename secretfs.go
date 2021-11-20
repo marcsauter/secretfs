@@ -24,9 +24,9 @@ import (
 
 const (
 	// DefaultSecretPrefix for each secret name
-	DefaultSecretPrefix = "ces-data-" //nolint:gosec // no credentials
+	DefaultSecretPrefix = "" //nolint:gosec // no credentials
 	// DefaultSecretSuffix for each secret name
-	DefaultSecretSuffix = "-store"
+	DefaultSecretSuffix = ""
 	// DefaultRequestTimeout for k8s requests
 	DefaultRequestTimeout = 5 * time.Second
 )
