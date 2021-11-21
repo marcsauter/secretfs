@@ -66,16 +66,16 @@ func (sfs secretFs) Create(name string) (afero.File, error) {
 	}
 
 	if si.IsDir() {
-		return nil, fmt.Errorf("%s is a directory", name) // TODO: standard error?
+		return nil, fmt.Errorf("%s is a secret", name)
 	}
 
 	s := si.Sys().(*corev1.Secret)
-	s.Data[si.Name()] = []byte{}
+	createKey(s, si.Name())
 
 	ctx, cancel := sfs.context()
 	defer cancel()
 
-	resp, err := sfs.c.CoreV1().Secrets(s.Namespace).Create(ctx, s, metav1.CreateOptions{})
+	resp, err := sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
 
 	return &secretEntry{
 		secret: resp,
@@ -93,7 +93,7 @@ func (sfs secretFs) Mkdir(name string, perm os.FileMode) error {
 	}
 
 	if !p.isDir() {
-		return fmt.Errorf("%s is not a directory/secret", name)
+		return fmt.Errorf("%s is not a secret", name)
 	}
 
 	si, err := sfs.Stat(name)
@@ -134,17 +134,13 @@ func (sfs secretFs) OpenFile(name string, flag int, perm os.FileMode) (afero.Fil
 
 // Remove removes an empty secret or a key identified by name.
 func (sfs secretFs) Remove(name string) error {
-	p, err := newSecretPath(name)
-	if err != nil {
-		return err
-	}
-
 	si, err := sfs.Stat(name)
 	if err != nil {
 		return err
 	}
 
 	s := si.Sys().(*corev1.Secret)
+
 	if !checkAnnotaion(s) {
 		return fmt.Errorf("not managed with secretfs")
 	}
@@ -160,11 +156,11 @@ func (sfs secretFs) Remove(name string) error {
 		return sfs.c.CoreV1().Secrets(s.Namespace).Delete(ctx, s.Name, metav1.DeleteOptions{})
 	}
 
-	if _, ok := s.Data[p[KEY]]; !ok {
+	if _, ok := s.Data[si.Name()]; !ok {
 		return afero.ErrFileNotFound
 	}
 
-	delete(s.Data, p[KEY])
+	delete(s.Data, si.Name())
 
 	_, err = sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
 
@@ -174,11 +170,6 @@ func (sfs secretFs) Remove(name string) error {
 // RemoveAll removes a secret or key with all it contains.
 // It does not fail if the path does not exist (return nil).
 func (sfs secretFs) RemoveAll(path string) error {
-	p, err := newSecretPath(path)
-	if err != nil {
-		return err
-	}
-
 	si, err := sfs.Stat(path)
 	if err != nil {
 		if err == afero.ErrFileNotFound {
@@ -200,7 +191,7 @@ func (sfs secretFs) RemoveAll(path string) error {
 		return sfs.c.CoreV1().Secrets(s.Namespace).Delete(ctx, s.Name, metav1.DeleteOptions{})
 	}
 
-	delete(s.Data, p[KEY])
+	delete(s.Data, si.Name())
 
 	_, err = sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
 
