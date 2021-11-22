@@ -36,7 +36,7 @@ type secretFs struct {
 	l       *zap.SugaredLogger
 }
 
-var _ afero.Fs = secretFs{}
+var _ afero.Fs = (*secretFs)(nil)
 
 // New returns a new afero.Fs for handling k8s secrets as files
 func New(c *kubernetes.Clientset, opts ...Option) afero.Fs {

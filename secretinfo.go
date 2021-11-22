@@ -19,7 +19,7 @@ type secretInfo struct {
 	secret *corev1.Secret
 }
 
-var _ os.FileInfo = secretInfo{}
+var _ os.FileInfo = (*secretInfo)(nil)
 
 // Name returns the base name
 func (si secretInfo) Name() string {

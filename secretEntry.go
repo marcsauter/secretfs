@@ -14,7 +14,7 @@ type secretEntry struct {
 	value  []byte
 }
 
-var _ afero.File = secretEntry{}
+var _ afero.File = (*secretEntry)(nil)
 
 // Close io.Closer
 func (s secretEntry) Close() error {
