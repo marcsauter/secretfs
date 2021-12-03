@@ -29,11 +29,12 @@ const (
 
 // secretFs implements afero.secretFs for k8s secrets
 type secretFs struct {
-	c       *kubernetes.Clientset
-	timeout time.Duration
-	prefix  string
-	suffix  string
-	l       *zap.SugaredLogger
+	c          *kubernetes.Clientset
+	secretType corev1.SecretType
+	timeout    time.Duration
+	prefix     string
+	suffix     string
+	l          *zap.SugaredLogger
 }
 
 var _ afero.Fs = (*secretFs)(nil)
@@ -41,9 +42,10 @@ var _ afero.Fs = (*secretFs)(nil)
 // New returns a new afero.Fs for handling k8s secrets as files
 func New(c *kubernetes.Clientset, opts ...Option) afero.Fs {
 	s := &secretFs{
-		c:       c,
-		timeout: DefaultRequestTimeout,
-		l:       zap.NewNop().Sugar(),
+		c:          c,
+		secretType: corev1.SecretTypeOpaque,
+		timeout:    DefaultRequestTimeout,
+		l:          zap.NewNop().Sugar(),
 	}
 
 	for _, option := range opts {
@@ -108,7 +110,9 @@ func (sfs secretFs) Mkdir(name string, perm os.FileMode) error {
 	ctx, cancel := sfs.context()
 	defer cancel()
 
-	req := &corev1.Secret{}
+	req := &corev1.Secret{
+		Type: sfs.secretType,
+	}
 	req.Name = p[SECRET]
 	addAnnotation(req)
 
@@ -212,7 +216,9 @@ func (sfs secretFs) Rename(oldname, newname string) error {
 		return afero.ErrDestinationExists
 	}
 
-	nsec := &corev1.Secret{}
+	nsec := &corev1.Secret{
+		Type: sfs.secretType,
+	}
 	if nsi != nil {
 		nsec = nsi.Sys().(*corev1.Secret)
 	}
@@ -248,7 +254,7 @@ func (sfs secretFs) Stat(name string) (os.FileInfo, error) {
 	switch len(p) {
 	case 2:
 		fi.isDir = true
-		fi.mode = fs.FileMode(fs.ModeDir)
+		fi.mode = fs.ModeDir
 	case 3:
 		fi.isDir = false
 		fi.mode = fs.FileMode(0)

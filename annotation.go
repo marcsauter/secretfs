@@ -3,7 +3,9 @@ package secretfs
 import corev1 "k8s.io/api/core/v1"
 
 const (
-	AnnotationKey   = "secretfs"
+	// AnnotationKey is the name of the secretfs annotation
+	AnnotationKey = "secretfs"
+	// AnnotationValue is the secretfs version
 	AnnotationValue = "v1"
 )
 

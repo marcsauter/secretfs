@@ -9,6 +9,7 @@ import (
 // NAMESPACE/SECRET[/KEY]
 type secretPathElement int8
 
+// PathElements
 const (
 	NAMESPACE secretPathElement = iota
 	SECRET
