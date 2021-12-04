@@ -6,20 +6,16 @@
 package secretfs
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"time"
 
+	"github.com/marcsauter/secretfs/internal/backend"
+	"github.com/marcsauter/secretfs/internal/item"
+	"github.com/marcsauter/secretfs/internal/secret"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
-
-	corev1 "k8s.io/api/core/v1"
-	apierr "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -29,23 +25,19 @@ const (
 
 // secretFs implements afero.secretFs for k8s secrets
 type secretFs struct {
-	c          *kubernetes.Clientset
-	secretType corev1.SecretType
-	timeout    time.Duration
-	prefix     string
-	suffix     string
-	l          *zap.SugaredLogger
+	backend *backend.Backend
+	prefix  string
+	suffix  string
+	l       *zap.SugaredLogger
 }
 
 var _ afero.Fs = (*secretFs)(nil)
 
 // New returns a new afero.Fs for handling k8s secrets as files
-func New(c *kubernetes.Clientset, opts ...Option) afero.Fs {
+func New(b *backend.Backend, opts ...Option) afero.Fs {
 	s := &secretFs{
-		c:          c,
-		secretType: corev1.SecretTypeOpaque,
-		timeout:    DefaultRequestTimeout,
-		l:          zap.NewNop().Sugar(),
+		backend: b,
+		l:       zap.NewNop().Sugar(),
 	}
 
 	for _, option := range opts {
@@ -53,10 +45,6 @@ func New(c *kubernetes.Clientset, opts ...Option) afero.Fs {
 	}
 
 	return s
-}
-
-func (sfs secretFs) context() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), sfs.timeout)
 }
 
 // Create creates an key/value entry in the filesystem/secret
@@ -71,52 +59,29 @@ func (sfs secretFs) Create(name string) (afero.File, error) {
 		return nil, fmt.Errorf("%s is a secret", name)
 	}
 
-	s := si.Sys().(*corev1.Secret)
-	createKey(s, si.Name())
+	s := si.Sys().(*secret.Secret)
+	if err := s.Add(si.Name(), nil); err != nil {
+		return nil, err
+	}
 
-	ctx, cancel := sfs.context()
-	defer cancel()
-
-	resp, err := sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
-
-	return &secretEntry{
-		secret: resp,
-		key:    si.Name(),
-		value:  []byte{},
-	}, err
+	return item.New(s, si.Name(), nil), sfs.backend.Store(s)
 }
 
 // Mkdir creates a new, empty secret
 // return an error if any happens.
 func (sfs secretFs) Mkdir(name string, perm os.FileMode) error {
-	p, err := newSecretPath(name)
-	if err != nil {
-		return err
+	s, err := sfs.Stat(name)
+	if errors.Is(err, afero.ErrFileNotFound) {
+		if !s.IsDir() {
+			return fmt.Errorf("%s is not a secret", name)
+		}
+
+		return sfs.backend.Store(s.Sys().(*secret.Secret))
 	}
 
-	if !p.isDir() {
-		return fmt.Errorf("%s is not a secret", name)
-	}
-
-	si, err := sfs.Stat(name)
-	if err != nil && err != afero.ErrFileNotFound {
-		return err
-	}
-
-	if si != nil {
+	if err == nil {
 		return afero.ErrFileExists
 	}
-
-	ctx, cancel := sfs.context()
-	defer cancel()
-
-	req := &corev1.Secret{
-		Type: sfs.secretType,
-	}
-	req.Name = p[SECRET]
-	addAnnotation(req)
-
-	_, err = sfs.c.CoreV1().Secrets(p[NAMESPACE]).Create(ctx, req, metav1.CreateOptions{})
 
 	return err
 }
@@ -143,142 +108,128 @@ func (sfs secretFs) Remove(name string) error {
 		return err
 	}
 
-	s := si.Sys().(*corev1.Secret)
-
-	if !checkAnnotaion(s) {
-		return fmt.Errorf("not managed with secretfs")
-	}
-
-	if si.IsDir() && len(s.Data) != 0 {
-		return fmt.Errorf("secret is not empty")
-	}
-
-	ctx, cancel := sfs.context()
-	defer cancel()
+	s := si.Sys().(*secret.Secret)
 
 	if si.IsDir() {
-		return sfs.c.CoreV1().Secrets(s.Namespace).Delete(ctx, s.Name, metav1.DeleteOptions{})
+		if len(s.Data()) != 0 {
+			return fmt.Errorf("secret is not empty")
+		}
+
+		return sfs.backend.Delete(s) // remove empty secret
 	}
 
-	if _, ok := s.Data[si.Name()]; !ok {
-		return afero.ErrFileNotFound
+	// remove secret key
+	if err := s.Delete(si.Name()); err != nil {
+		return err
 	}
 
-	delete(s.Data, si.Name())
-
-	_, err = sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
-
-	return err
+	return sfs.backend.Store(s)
 }
 
 // RemoveAll removes a secret or key with all it contains.
 // It does not fail if the path does not exist (return nil).
 func (sfs secretFs) RemoveAll(path string) error {
 	si, err := sfs.Stat(path)
-	if err != nil {
-		if err == afero.ErrFileNotFound {
-			return nil
-		}
+	if errors.Is(err, afero.ErrFileNotFound) {
+		return nil
+	}
 
+	if err != nil {
 		return err
 	}
 
-	s := si.Sys().(*corev1.Secret)
-	if !checkAnnotaion(s) {
-		return fmt.Errorf("not managed with secretfs")
-	}
-
-	ctx, cancel := sfs.context()
-	defer cancel()
+	s := si.Sys().(*secret.Secret)
 
 	if si.IsDir() {
-		return sfs.c.CoreV1().Secrets(s.Namespace).Delete(ctx, s.Name, metav1.DeleteOptions{})
+		return sfs.backend.Delete(s) // remove secret
 	}
 
-	delete(s.Data, si.Name())
+	// remove secret key
+	_ = s.Delete(si.Name())
 
-	_, err = sfs.c.CoreV1().Secrets(s.Namespace).Update(ctx, s, metav1.UpdateOptions{})
-
-	return err
+	return sfs.backend.Store(s)
 }
 
 // Rename renames (moves) oldpath to newpath. If newpath already exists and is not a directory, Rename replaces it.
 func (sfs secretFs) Rename(oldname, newname string) error {
-	osi, err := os.Stat(oldname)
-	if errors.Is(err, os.ErrNotExist) {
-		return afero.ErrFileNotFound
+	osi, err := sfs.Stat(oldname)
+	if err != nil {
+		return err
 	}
 
-	osec := osi.Sys().(corev1.Secret)
+	osec := osi.Sys().(*secret.Secret)
 
-	nsi, err := os.Stat(newname)
-	if err == nil && nsi.IsDir() {
-		return afero.ErrDestinationExists
+	nsi, err := sfs.Stat(newname)
+	if err != nil {
+		return err
 	}
 
-	nsec := &corev1.Secret{
-		Type: sfs.secretType,
-	}
-	if nsi != nil {
-		nsec = nsi.Sys().(*corev1.Secret)
-	}
+	nsec := nsi.Sys().(*secret.Secret)
 
-	if nsec.Namespace != "" && osec.Namespace != nsec.Namespace {
+	// ns1/sec1 -> ns2/sec2
+	if osec.Namespace() != nsec.Namespace() {
 		return errors.New("move a secret in a different namespaces is not allowed") // TODO: discuss
 	}
 
-	ctx, cancel := sfs.context()
-	defer cancel()
+	// move/rename secret
+	// sec1 -> sec2
+	if osi.IsDir() {
+		if nsi.IsDir() { // ???
+			return afero.ErrDestinationExists
+		}
 
-	// sec1/key1 -> sec1/key2 // rename key
-	// sec1 -> sec2 // rename secret
+		nsec.SetData(osec.Data())
+
+		if err := sfs.backend.Store(nsec); err != nil {
+			return err
+		}
+
+		return sfs.backend.Delete(osec)
+	}
+
+	// move/rename key
 	// sec1/key1 -> sec2 // move key1 from sec1 to sec2 // sec2 must exist
+	// sec1/key1 -> sec1/key2 // rename key
 	// sec1/key1 -> sec2/key2 // move key1 as key2 to sec2 // sec2 must exist, sec2/key2 will be replaced
 
-	_, err = sfs.c.CoreV1().Secrets(osec.Namespace).Update(ctx, nil, metav1.UpdateOptions{})
+	if !nsi.IsDir() { // ???
+		return afero.ErrFileNotFound
+	}
 
-	return err
+	if osec.Secret() == nsec.Secret() {
+		return nil
+	}
+
+	v, ok := osec.Get(osi.Name())
+	if !ok {
+		return afero.ErrFileNotFound
+	}
+
+	nsec.Update(nsi.Name(), v)
+
+	if err := sfs.backend.Store(nsec); err != nil {
+		return err
+	}
+
+	if err := osec.Delete(osi.Name()); err != nil {
+		return nil
+	}
+
+	return sfs.backend.Store(osec)
 }
 
 // Stat returns a FileInfo describing the named secret/key, or an error.
 func (sfs secretFs) Stat(name string) (os.FileInfo, error) {
-	fi := &secretInfo{
-		name: name,
-	}
-
-	p, err := newSecretPath(name)
+	s, err := secret.New(name)
 	if err != nil {
 		return nil, err
 	}
 
-	switch len(p) {
-	case 2:
-		fi.isDir = true
-		fi.mode = fs.ModeDir
-	case 3:
-		fi.isDir = false
-		fi.mode = fs.FileMode(0)
-	default:
-		return nil, fmt.Errorf("invalid path: %s", name)
+	if err := sfs.backend.Load(s); err != nil {
+		return s, err
 	}
 
-	ctx, cancel := sfs.context()
-	defer cancel()
-
-	s, err := sfs.c.CoreV1().Secrets(p[NAMESPACE]).Get(ctx, p[SECRET], metav1.GetOptions{})
-	if err == nil {
-		fi.mtime = s.CreationTimestamp.Time
-		fi.size = int64(len(s.Data))
-		fi.secret = s
-
-		return fi, nil
-	}
-
-	if apierr.IsNotFound(err) {
-		return nil, afero.ErrFileNotFound
-	}
-
-	return nil, err
+	return s, nil
 }
 
 // Name of this FileSystem.

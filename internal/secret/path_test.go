@@ -1,4 +1,4 @@
-package secretfs
+package secret
 
 import (
 	"testing"
@@ -20,7 +20,7 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range invalid {
-			p, err := newSecretPath(n)
+			p, err := splitPath(n)
 			assert.Error(t, err)
 			assert.Nil(t, p)
 		}
@@ -39,7 +39,7 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range valid {
-			p, err := newSecretPath(n)
+			p, err := splitPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 		}
@@ -54,10 +54,10 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range validDir {
-			p, err := newSecretPath(n)
+			p, err := splitPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
-			assert.True(t, p.isDir())
+			assert.True(t, p.IsDir())
 		}
 	})
 
@@ -70,10 +70,10 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range validDir {
-			p, err := newSecretPath(n)
+			p, err := splitPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
-			assert.False(t, p.isDir())
+			assert.False(t, p.IsDir())
 		}
 	})
 }

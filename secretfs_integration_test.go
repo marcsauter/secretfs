@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/marcsauter/secretfs"
+	"github.com/marcsauter/secretfs/internal/backend"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/kubernetes"
@@ -50,7 +51,7 @@ func TestSecretFsSecret(t *testing.T) {
 		t.Skip("no cluster connection available")
 	}
 
-	sfs := secretfs.New(clientset)
+	sfs := secretfs.New(backend.New(clientset))
 	require.NotNil(t, sfs)
 
 	t.Run("Secret Mkdir and Remove", func(t *testing.T) {
@@ -77,7 +78,7 @@ func TestSecretFsSecretKey(t *testing.T) {
 		t.Skip("no cluster connection available")
 	}
 
-	sfs := secretfs.New(clientset)
+	sfs := secretfs.New(backend.New(clientset))
 	require.NotNil(t, sfs)
 
 	t.Run("Key Create and Remove", func(t *testing.T) {
