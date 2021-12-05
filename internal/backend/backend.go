@@ -86,8 +86,11 @@ func (b *Backend) Store(s *secret.Secret) error {
 	defer cancel()
 
 	_, err = b.c.CoreV1().Secrets(s.Namespace()).Update(ctx, ks, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
 
-	return err
+	return nil
 }
 
 // Delete secret in backend
@@ -104,7 +107,11 @@ func (b *Backend) Delete(s *secret.Secret) error {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	return b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, s.Secret(), metav1.DeleteOptions{})
+	if err := b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, s.Secret(), metav1.DeleteOptions{}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (b *Backend) get(s *secret.Secret) (*corev1.Secret, error) {

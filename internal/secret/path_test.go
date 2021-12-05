@@ -58,6 +58,9 @@ func TestPath(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 			assert.True(t, p.IsDir())
+			assert.Equal(t, "default", p.Namespace())
+			assert.Equal(t, "secret", p.Secret())
+			assert.Empty(t, p.Key())
 		}
 	})
 
@@ -74,6 +77,9 @@ func TestPath(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 			assert.False(t, p.IsDir())
+			assert.Equal(t, "default", p.Namespace())
+			assert.Equal(t, "secret", p.Secret())
+			assert.Equal(t, "key", p.Key())
 		}
 	})
 }

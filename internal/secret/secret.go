@@ -42,6 +42,7 @@ func New(name string) (*Secret, error) {
 
 	s.isDir = false
 	s.mode = fs.FileMode(0)
+	s.mtime = time.Now()
 
 	if p.IsDir() {
 		s.isDir = true
@@ -64,7 +65,7 @@ func (s *Secret) Secret() string {
 // SetData sets the secret data map
 func (s *Secret) SetData(data map[string][]byte) {
 	s.data = data
-	s.size = int64(len(s.data)) // TODO: better
+	s.size = int64(len(s.data))
 }
 
 // Data sets the secret data map
@@ -81,15 +82,8 @@ func (s *Secret) Get(key string) ([]byte, bool) {
 
 // Add a key/value pair, do not overwrite an existing.
 func (s *Secret) Add(key string, value []byte) error {
-	if value == nil {
-		value = []byte{}
-	}
-
 	if s.data == nil {
 		s.data = make(map[string][]byte)
-		s.data[key] = value
-
-		return nil
 	}
 
 	if _, ok := s.data[key]; ok {
@@ -97,6 +91,8 @@ func (s *Secret) Add(key string, value []byte) error {
 	}
 
 	s.data[key] = value
+	s.size = int64(len(s.data))
+	s.mtime = time.Now()
 
 	return nil
 }
@@ -107,11 +103,9 @@ func (s *Secret) Update(key string, value []byte) {
 		s.data = make(map[string][]byte)
 	}
 
-	if value == nil {
-		value = []byte{}
-	}
-
 	s.data[key] = value
+	s.size = int64(len(s.data))
+	s.mtime = time.Now()
 }
 
 // Delete a key/value pair
@@ -121,6 +115,8 @@ func (s *Secret) Delete(key string) error {
 	}
 
 	delete(s.data, key)
+	s.size = int64(len(s.data))
+	s.mtime = time.Now()
 
 	return nil
 }

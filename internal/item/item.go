@@ -28,72 +28,84 @@ func New(ref *secret.Secret, key string, value []byte) *Item {
 var _ afero.File = (*Item)(nil)
 
 // Close io.Closer
-func (s Item) Close() error {
+func (s *Item) Close() error {
+	if err := s.Sync(); err != nil {
+		return err
+	}
+
+	s.ref = nil
+
 	return nil
 }
 
 // Read io.Reader
 // https://pkg.go.dev/io#Reader
-func (s Item) Read(p []byte) (n int, err error) {
+func (s *Item) Read(p []byte) (n int, err error) {
 	return
 }
 
 // ReadAt io.ReaderAt
 // https://pkg.go.dev/io#ReaderAt
-func (s Item) ReadAt(p []byte, off int64) (n int, err error) {
+func (s *Item) ReadAt(p []byte, off int64) (n int, err error) {
 	return
 }
 
 // Seek io.Seeker
 // https://pkg.go.dev/io#Seeker
-func (s Item) Seek(offset int64, whence int) (int64, error) {
+func (s *Item) Seek(offset int64, whence int) (int64, error) {
 	return 0, nil
 }
 
 // Write io.Writer
 // https://pkg.go.dev/io#Writer
-func (s Item) Write(p []byte) (n int, err error) {
+func (s *Item) Write(p []byte) (n int, err error) {
 	return
 }
 
 // WriteAt io.WriterAt
 // https://pkg.go.dev/io#WriterAt
-func (s Item) WriteAt(p []byte, off int64) (n int, err error) {
+func (s *Item) WriteAt(p []byte, off int64) (n int, err error) {
 	return
 }
 
 // Name returns the secret name
-func (s Item) Name() string {
+func (s *Item) Name() string {
 	return s.key
 }
 
 // Readdir afero.File
-func (s Item) Readdir(count int) ([]os.FileInfo, error) {
+func (s *Item) Readdir(count int) ([]os.FileInfo, error) {
 	return []os.FileInfo{}, nil
 }
 
 // Readdirnames afero.File
-func (s Item) Readdirnames(n int) ([]string, error) {
+func (s *Item) Readdirnames(n int) ([]string, error) {
 	return []string{}, nil
 }
 
 // Stat afero.File
-func (s Item) Stat() (os.FileInfo, error) {
+func (s *Item) Stat() (os.FileInfo, error) {
 	return nil, nil
 }
 
 // Sync afero.File
-func (s Item) Sync() error {
+func (s *Item) Sync() error {
 	return nil
 }
 
 // Truncate afero.File
-func (s Item) Truncate(size int64) error {
+func (s *Item) Truncate(size int64) error {
+	if int64(len(s.value)) <= size {
+		return nil
+	}
+
+	s.value = append([]byte{}, s.value[:size]...)
+
 	return nil
 }
 
 // WriteString afero.File
-func (s Item) WriteString(st string) (ret int, err error) {
+func (s *Item) WriteString(st string) (ret int, err error) {
 	return
 }
 
