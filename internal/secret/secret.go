@@ -68,7 +68,7 @@ func (s *Secret) SetData(data map[string][]byte) {
 	s.size = int64(len(s.data))
 }
 
-// Data sets the secret data map
+// Data returns the secret data map
 func (s *Secret) Data() map[string][]byte {
 	return s.data
 }

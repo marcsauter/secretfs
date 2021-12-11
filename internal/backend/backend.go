@@ -26,14 +26,14 @@ const (
 
 // Backend implements the communication with Kubernetes
 type Backend struct {
-	c          *kubernetes.Clientset
+	c          kubernetes.Interface
 	secretType corev1.SecretType
 	timeout    time.Duration
 	l          *zap.SugaredLogger
 }
 
 // New returns a Backend
-func New(c *kubernetes.Clientset, opts ...Option) *Backend {
+func New(c kubernetes.Interface, opts ...Option) *Backend {
 	b := &Backend{
 		c:       c,
 		timeout: DefaultRequestTimeout,
@@ -67,6 +67,8 @@ func (b *Backend) Load(s *secret.Secret) error {
 func (b *Backend) Store(s *secret.Secret) error {
 	ks, err := b.get(s)
 
+	ks.Data = s.Data()
+
 	if apierr.IsNotFound(err) {
 		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 		defer cancel()
@@ -79,8 +81,6 @@ func (b *Backend) Store(s *secret.Secret) error {
 	if err != nil {
 		return err
 	}
-
-	ks.Data = s.Data()
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
