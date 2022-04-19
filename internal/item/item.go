@@ -5,7 +5,7 @@ package item
 import (
 	"os"
 
-	"github.com/marcsauter/secretfs/internal/secret"
+	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/spf13/afero"
 )
 

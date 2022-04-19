@@ -1,4 +1,4 @@
-package secretfs
+package sekretsfs
 
 import (
 	"go.uber.org/zap"

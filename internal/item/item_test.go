@@ -3,8 +3,8 @@ package item_test
 import (
 	"testing"
 
-	"github.com/marcsauter/secretfs/internal/item"
-	"github.com/marcsauter/secretfs/internal/secret"
+	"github.com/marcsauter/sekretsfs/internal/item"
+	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/stretchr/testify/require"
 )
 

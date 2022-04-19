@@ -1,4 +1,4 @@
-module github.com/marcsauter/secretfs
+module github.com/marcsauter/sekretsfs
 
 go 1.17
 

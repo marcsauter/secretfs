@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/marcsauter/secretfs/internal/secret"
+	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
@@ -18,9 +18,9 @@ import (
 const (
 	// DefaultRequestTimeout for k8s requests
 	DefaultRequestTimeout = 5 * time.Second
-	// AnnotationKey is the name of the secretfs annotation
-	AnnotationKey = "secretfs"
-	// AnnotationValue is the secretfs version
+	// AnnotationKey is the name of the sekretsfs annotation
+	AnnotationKey = "sekretsfs"
+	// AnnotationValue is the sekretsfs version
 	AnnotationValue = "v1"
 )
 
@@ -138,5 +138,5 @@ func (b *Backend) get(s *secret.Secret) (*corev1.Secret, error) {
 		return ks, nil
 	}
 
-	return nil, fmt.Errorf("not managed with secretfs")
+	return nil, fmt.Errorf("not managed with sekretsfs")
 }

@@ -3,8 +3,8 @@ package backend_test
 import (
 	"testing"
 
-	"github.com/marcsauter/secretfs/internal/backend"
-	"github.com/marcsauter/secretfs/internal/secret"
+	"github.com/marcsauter/sekretsfs/internal/backend"
+	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/stretchr/testify/require"
 	"github.com/tj/assert"
 	v1 "k8s.io/api/core/v1"
@@ -21,14 +21,14 @@ func TestBackend(t *testing.T) {
 		},
 	})
 
-	t.Run("load secret not managed with secretfs", func(t *testing.T) {
+	t.Run("load secret not managed with sekretsfs", func(t *testing.T) {
 		b := backend.New(c)
 
 		s, err := secret.New("default/notmanaged")
 		require.NoError(t, err)
 
 		err = b.Load(s)
-		assert.EqualError(t, err, "not managed with secretfs")
+		assert.EqualError(t, err, "not managed with sekretsfs")
 	})
 
 	t.Run("store new and load", func(t *testing.T) {
