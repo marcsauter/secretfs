@@ -3,8 +3,6 @@ package secretfs_test
 import (
 	"log"
 	"os"
-	"os/user"
-	"path/filepath"
 	"testing"
 
 	"github.com/marcsauter/secretfs"
@@ -20,17 +18,17 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	u, err := user.Current()
+	ac, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	c, err := clientcmd.BuildConfigFromFlags("", filepath.Join(u.HomeDir, ".kube", "config"))
+	rc, err := clientcmd.NewNonInteractiveClientConfig(*ac, "kind-kind", nil, nil).ClientConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	cs, err := kubernetes.NewForConfig(c)
+	cs, err := kubernetes.NewForConfig(rc)
 	if err != nil {
 		log.Fatal(err)
 	}
