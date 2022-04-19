@@ -3,7 +3,7 @@ module github.com/marcsauter/secretfs
 go 1.17
 
 require (
-	github.com/spf13/afero v1.6.0
+	github.com/spf13/afero v1.8.2
 	github.com/stretchr/testify v1.7.0
 	github.com/tj/assert v0.0.3
 	go.uber.org/zap v1.19.1
@@ -31,12 +31,12 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
+	golang.org/x/oauth2 v0.0.0-20210218202405-ba52d332ba99 // indirect
 	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22 // indirect
 	golang.org/x/term v0.0.0-20210220032956-6a3ed077a48d // indirect
 	golang.org/x/text v0.3.6 // indirect
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
-	google.golang.org/appengine v1.6.5 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
