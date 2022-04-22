@@ -8,12 +8,12 @@ import (
 )
 
 // Option represents a functional Option
-type Option func(*Backend)
+type Option func(*backend)
 
 // WithSecretType configures a custom secret type
 // TODO: does this belong here?
 func WithSecretType(t corev1.SecretType) Option {
-	return func(b *Backend) {
+	return func(b *backend) {
 		b.secretType = t
 	}
 }
@@ -38,14 +38,14 @@ func WithSecretSuffix(x string) Option {
 
 // WithTimeout configures a custom request timeout
 func WithTimeout(t time.Duration) Option {
-	return func(b *Backend) {
+	return func(b *backend) {
 		b.timeout = t
 	}
 }
 
 // WithLogger configures a logger
 func WithLogger(l *zap.SugaredLogger) Option {
-	return func(b *Backend) {
+	return func(b *backend) {
 		b.l = l
 	}
 }

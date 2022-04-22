@@ -17,7 +17,7 @@ func TestNewSecretAndAferoFileInfoInterface(t *testing.T) {
 	require.NotNil(t, s)
 
 	assert.Equal(t, "default", s.Namespace())
-	assert.Equal(t, "testsecret", s.Secret())
+	assert.Equal(t, "testsecret", s.Path())
 
 	assert.Equal(t, "testsecret", s.Name())
 	assert.Empty(t, s.Size())
@@ -33,7 +33,7 @@ func TestNewSecretKeyAndAferoFileInfoInterface(t *testing.T) {
 	require.NotNil(t, s)
 
 	assert.Equal(t, "default", s.Namespace())
-	assert.Equal(t, "testsecret", s.Secret())
+	assert.Equal(t, "testsecret", s.Path())
 
 	assert.Equal(t, "tls.crt", s.Name())
 	assert.Empty(t, s.Size())

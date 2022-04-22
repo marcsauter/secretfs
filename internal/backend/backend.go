@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/marcsauter/sekretsfs/internal/secret"
+	"github.com/marcsauter/sekretsfs/internal/io"
+
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
@@ -24,17 +25,17 @@ const (
 	AnnotationValue = "v1"
 )
 
-// Backend implements the communication with Kubernetes
-type Backend struct {
+// backend implements the communication with Kubernetes
+type backend struct {
 	c          kubernetes.Interface
 	secretType corev1.SecretType
 	timeout    time.Duration
 	l          *zap.SugaredLogger
 }
 
-// New returns a Backend
-func New(c kubernetes.Interface, opts ...Option) *Backend {
-	b := &Backend{
+// New returns a io.LoadStoreDeleter
+func New(c kubernetes.Interface, opts ...Option) io.LoadStoreDeleter {
+	b := &backend{
 		c:       c,
 		timeout: DefaultRequestTimeout,
 	}
@@ -47,7 +48,7 @@ func New(c kubernetes.Interface, opts ...Option) *Backend {
 }
 
 // Load secret from backend
-func (b *Backend) Load(s *secret.Secret) error {
+func (b *backend) Load(s io.Sekreter) error {
 	ks, err := b.get(s)
 
 	if apierr.IsNotFound(err) {
@@ -64,7 +65,7 @@ func (b *Backend) Load(s *secret.Secret) error {
 }
 
 // Store secret in backend
-func (b *Backend) Store(s *secret.Secret) error {
+func (b *backend) Store(s io.Sekreter) error {
 	ks, err := b.get(s)
 
 	ks.Data = s.Data()
@@ -94,7 +95,7 @@ func (b *Backend) Store(s *secret.Secret) error {
 }
 
 // Delete secret in backend
-func (b *Backend) Delete(s *secret.Secret) error {
+func (b *backend) Delete(s io.Sekreter) error {
 	_, err := b.get(s)
 	if apierr.IsNotFound(err) {
 		return nil
@@ -107,18 +108,18 @@ func (b *Backend) Delete(s *secret.Secret) error {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	if err := b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, s.Secret(), metav1.DeleteOptions{}); err != nil {
+	if err := b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, s.Name(), metav1.DeleteOptions{}); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (b *Backend) get(s *secret.Secret) (*corev1.Secret, error) {
+func (b *backend) get(s io.Sekreter) (*corev1.Secret, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	ks, err := b.c.CoreV1().Secrets(s.Namespace()).Get(ctx, s.Secret(), metav1.GetOptions{})
+	ks, err := b.c.CoreV1().Secrets(s.Namespace()).Get(ctx, s.Name(), metav1.GetOptions{})
 	if apierr.IsNotFound(err) {
 		return &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{

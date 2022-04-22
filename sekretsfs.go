@@ -1,4 +1,4 @@
-// Package sekretsfs implements the handling of secrets for k8s
+// Package sekretsfs is a filesystem for k8s secrets
 // Namespace -> directory
 // Secret -> directory
 // Secret key -> file
@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/marcsauter/sekretsfs/internal/backend"
+	"github.com/marcsauter/sekretsfs/internal/io"
 	"github.com/marcsauter/sekretsfs/internal/item"
 	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/spf13/afero"
@@ -25,7 +25,7 @@ const (
 
 // sekretsFs implements afero.sekretsFs for k8s secrets
 type sekretsFs struct {
-	backend *backend.Backend
+	backend io.LoadStoreDeleter
 	prefix  string
 	suffix  string
 	l       *zap.SugaredLogger
@@ -34,7 +34,7 @@ type sekretsFs struct {
 var _ afero.Fs = (*sekretsFs)(nil)
 
 // New returns a new afero.Fs for handling k8s secrets as files
-func New(b *backend.Backend, opts ...Option) afero.Fs {
+func New(b io.LoadStoreDeleter, opts ...Option) afero.Fs {
 	s := &sekretsFs{
 		backend: b,
 		l:       zap.NewNop().Sugar(),
@@ -196,7 +196,7 @@ func (sfs sekretsFs) Rename(oldname, newname string) error {
 		return afero.ErrFileNotFound
 	}
 
-	if osec.Secret() == nsec.Secret() {
+	if osec.Path() == nsec.Path() {
 		return nil
 	}
 

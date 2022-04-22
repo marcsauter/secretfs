@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/marcsauter/sekretsfs/internal/io"
 	"github.com/spf13/afero"
 )
 
@@ -52,13 +53,15 @@ func New(name string) (*Secret, error) {
 	return s, nil
 }
 
+var _ io.Sekreter = (*Secret)(nil)
+
 // Namespace returns the namespace name
 func (s *Secret) Namespace() string {
 	return s.namespace
 }
 
-// Secret returns the secret name
-func (s *Secret) Secret() string {
+// Path returns the secret name
+func (s *Secret) Path() string {
 	return s.secret
 }
 

@@ -3,7 +3,9 @@
 package item
 
 import (
+	"io/fs"
 	"os"
+	"time"
 
 	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/spf13/afero"
@@ -11,13 +13,14 @@ import (
 
 // Item is a k8s secret key/value entry implementing the afero.File interface
 type Item struct {
-	ref   *secret.Secret
+	ref *secret.Secret
+
 	key   string
 	value []byte
 }
 
 // New returns a new Item
-func New(ref *secret.Secret, key string, value []byte) *Item {
+func New(ref *secret.Secret, key string, value []byte) afero.File {
 	return &Item{
 		ref:   ref,
 		key:   key,
@@ -25,88 +28,115 @@ func New(ref *secret.Secret, key string, value []byte) *Item {
 	}
 }
 
-var _ afero.File = (*Item)(nil)
+var _ os.FileInfo = (*Item)(nil)
 
 // Close io.Closer
-func (s *Item) Close() error {
-	if err := s.Sync(); err != nil {
-		return err
+func (i *Item) Close() error {
+	if i == nil {
+		return os.ErrInvalid
 	}
 
-	s.ref = nil
+	defer func() {
+		i.ref = nil
+	}()
 
-	return nil
+	return i.Sync()
 }
 
 // Read io.Reader
 // https://pkg.go.dev/io#Reader
-func (s *Item) Read(p []byte) (n int, err error) {
+func (i *Item) Read(p []byte) (n int, err error) {
 	return
 }
 
 // ReadAt io.ReaderAt
 // https://pkg.go.dev/io#ReaderAt
-func (s *Item) ReadAt(p []byte, off int64) (n int, err error) {
+func (i *Item) ReadAt(p []byte, off int64) (n int, err error) {
 	return
 }
 
 // Seek io.Seeker
 // https://pkg.go.dev/io#Seeker
-func (s *Item) Seek(offset int64, whence int) (int64, error) {
+func (i *Item) Seek(offset int64, whence int) (int64, error) {
 	return 0, nil
 }
 
 // Write io.Writer
 // https://pkg.go.dev/io#Writer
-func (s *Item) Write(p []byte) (n int, err error) {
+func (i *Item) Write(p []byte) (n int, err error) {
 	return
 }
 
 // WriteAt io.WriterAt
 // https://pkg.go.dev/io#WriterAt
-func (s *Item) WriteAt(p []byte, off int64) (n int, err error) {
+func (i *Item) WriteAt(p []byte, off int64) (n int, err error) {
 	return
 }
 
-// Name returns the secret name
-func (s *Item) Name() string {
-	return s.key
+// Name returns the secret name (afero.File, io.FileInfo)
+func (i *Item) Name() string {
+	return i.key
 }
 
 // Readdir afero.File
-func (s *Item) Readdir(count int) ([]os.FileInfo, error) {
+func (i *Item) Readdir(count int) ([]os.FileInfo, error) {
 	return []os.FileInfo{}, nil
 }
 
 // Readdirnames afero.File
-func (s *Item) Readdirnames(n int) ([]string, error) {
+func (i *Item) Readdirnames(n int) ([]string, error) {
 	return []string{}, nil
 }
 
 // Stat afero.File
-func (s *Item) Stat() (os.FileInfo, error) {
+func (i *Item) Stat() (os.FileInfo, error) {
 	return nil, nil
 }
 
 // Sync afero.File
-func (s *Item) Sync() error {
+func (i *Item) Sync() error {
 	return nil
 }
 
 // Truncate afero.File
-func (s *Item) Truncate(size int64) error {
-	if int64(len(s.value)) <= size {
+func (i *Item) Truncate(size int64) error {
+	if int64(len(i.value)) <= size {
 		return nil
 	}
 
-	s.value = append([]byte{}, s.value[:size]...)
+	i.value = append([]byte{}, i.value[:size]...)
 
 	return nil
 }
 
 // WriteString afero.File
-func (s *Item) WriteString(st string) (ret int, err error) {
+func (i *Item) WriteString(st string) (ret int, err error) {
 	return
+}
+
+// Size returns the size in bytes (io.FileInfo)
+func (i *Item) Size() int64 {
+	return int64(len(i.value))
+}
+
+// Mode returns file mode bits
+func (i *Item) Mode() fs.FileMode {
+	return 0o666 // TODO:
+}
+
+// ModTime returns file modification time
+func (i *Item) ModTime() time.Time {
+	return time.Now() // TODO:
+}
+
+// IsDir always false for an Item
+func (i *Item) IsDir() bool {
+	return false
+}
+
+// Sys returns underlying data source (can return nil)
+func (i *Item) Sys() interface{} {
+	return nil // TODO:
 }
 
 // save function

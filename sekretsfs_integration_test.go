@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitVal)
 }
 
-func TestsekretsfsSecret(t *testing.T) {
+func TestSekretsfsSecret(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}
@@ -71,7 +71,7 @@ func TestsekretsfsSecret(t *testing.T) {
 	})
 }
 
-func TestsekretsfsSecretKey(t *testing.T) {
+func TestSekretsfsSecretKey(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}
