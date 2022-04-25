@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// DefaultRequestTimeout for k8s requests
+	// DefaultRequestTimeout for k8s API requests
 	DefaultRequestTimeout = 5 * time.Second
 )
 
@@ -49,6 +49,7 @@ func New(b io.LoadStoreDeleter, opts ...Option) afero.Fs {
 
 // Create creates an key/value entry in the filesystem/secret
 // returning the file/entry and an error, if any happens.
+// https://pkg.go.dev/os#Create
 func (sfs sekretsFs) Create(name string) (afero.File, error) {
 	si, err := sfs.Stat(name)
 	if err != nil {
@@ -60,9 +61,8 @@ func (sfs sekretsFs) Create(name string) (afero.File, error) {
 	}
 
 	s := si.Sys().(*secret.Secret)
-	if err := s.Add(si.Name(), nil); err != nil {
-		return nil, err
-	}
+
+	s.Update(si.Name(), nil)
 
 	return item.New(s, si.Name(), nil), sfs.backend.Store(s)
 }

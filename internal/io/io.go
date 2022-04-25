@@ -23,7 +23,7 @@ type LoadStoreDeleter interface {
 	Deleter
 }
 
-// Sekreter is the interface that wraps basic methods
+// Sekreter is the interface that abstracts the Kubernetes secret
 type Sekreter interface {
 	Name() string
 	Namespace() string
