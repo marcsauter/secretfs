@@ -52,12 +52,10 @@ func New(b io.LoadStoreDeleter, opts ...Option) afero.Fs {
 // https://pkg.go.dev/os#Create
 func (sfs sekretsFs) Create(name string) (afero.File, error) {
 	si, err := sfs.Stat(name)
-	if err != nil {
-		return nil, err
-	}
-
-	if si.IsDir() {
-		return nil, fmt.Errorf("%s is a secret", name)
+	if err == nil {
+		if si.IsDir() {
+			return nil, fmt.Errorf("%s is a secret", name)
+		}
 	}
 
 	s := si.Sys().(*secret.Secret)
