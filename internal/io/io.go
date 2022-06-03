@@ -3,17 +3,17 @@ package io
 
 // Loader is the interface that wraps the Load method,
 type Loader interface {
-	Load(Sekreter) error
+	Load(Secreter) error
 }
 
 // Storer is the interface that wraps the Store method.
 type Storer interface {
-	Store(Sekreter) error
+	Store(Secreter) error
 }
 
 // Deleter is the interface that wraps the Delete method.
 type Deleter interface {
-	Delete(Sekreter) error
+	Delete(Secreter) error
 }
 
 // LoadStoreDeleter is the interface that groups the basic Load, Store and Delete methods.
@@ -23,8 +23,8 @@ type LoadStoreDeleter interface {
 	Deleter
 }
 
-// Sekreter is the interface that abstracts the Kubernetes secret
-type Sekreter interface {
+// Secreter is the interface that abstracts the Kubernetes secret
+type Secreter interface {
 	Name() string
 	Namespace() string
 	Data() map[string][]byte

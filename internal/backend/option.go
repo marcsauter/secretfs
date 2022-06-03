@@ -4,12 +4,12 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
 )
 
 // Option represents a functional Option
 type Option func(*backend)
 
+/*
 // WithSecretType configures a custom secret type
 // TODO: does this belong here?
 func WithSecretType(t corev1.SecretType) Option {
@@ -17,24 +17,21 @@ func WithSecretType(t corev1.SecretType) Option {
 		b.secretType = t
 	}
 }
+*/
 
-/*
 // WithSecretPrefix configures a custom secret prefix
-// TODO: does this belong here?
 func WithSecretPrefix(x string) Option {
-	return func(s *Backend) {
-		s.prefix = x
+	return func(b *backend) {
+		b.prefix = x
 	}
 }
 
 // WithSecretSuffix configures a custom secret prefix
-// TODO: does this belong here?
 func WithSecretSuffix(x string) Option {
-	return func(s *Backend) {
-		s.suffix = x
+	return func(b *backend) {
+		b.suffix = x
 	}
 }
-*/
 
 // WithTimeout configures a custom request timeout
 func WithTimeout(t time.Duration) Option {

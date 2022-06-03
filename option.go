@@ -1,6 +1,8 @@
 package sekretsfs
 
 import (
+	"time"
+
 	"go.uber.org/zap"
 )
 
@@ -18,6 +20,13 @@ func WithSecretPrefix(x string) Option {
 func WithSecretSuffix(x string) Option {
 	return func(s *sekretsFs) {
 		s.suffix = x
+	}
+}
+
+// WithTimeout configures a custom request timeout
+func WithTimeout(t time.Duration) Option {
+	return func(s *sekretsFs) {
+		s.timeout = t
 	}
 }
 

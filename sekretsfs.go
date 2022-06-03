@@ -11,38 +11,55 @@ import (
 	"os"
 	"time"
 
+	"github.com/marcsauter/sekretsfs/internal/backend"
 	"github.com/marcsauter/sekretsfs/internal/io"
 	"github.com/marcsauter/sekretsfs/internal/item"
 	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
+	// DefaultSecretPrefix
+	DefaultSecretPrefix = ""
+	// DefaultSecretSuffix
+	DefaultSecretSuffix = ""
 	// DefaultRequestTimeout for k8s API requests
 	DefaultRequestTimeout = 5 * time.Second
 )
 
-// sekretsFs implements afero.sekretsFs for k8s secrets
+// sekretsFs implements afero.Fs for k8s secrets
 type sekretsFs struct {
 	backend io.LoadStoreDeleter
 	prefix  string
 	suffix  string
+	timeout time.Duration
 	l       *zap.SugaredLogger
 }
 
 var _ afero.Fs = (*sekretsFs)(nil)
 
 // New returns a new afero.Fs for handling k8s secrets as files
-func New(b io.LoadStoreDeleter, opts ...Option) afero.Fs {
+func New(k kubernetes.Interface, opts ...Option) afero.Fs {
 	s := &sekretsFs{
-		backend: b,
+		backend: backend.New(k),
+		prefix:  DefaultSecretPrefix,
+		suffix:  DefaultSecretSuffix,
+		timeout: DefaultRequestTimeout,
 		l:       zap.NewNop().Sugar(),
 	}
 
 	for _, option := range opts {
 		option(s)
 	}
+
+	s.backend = backend.New(k,
+		backend.WithSecretPrefix(s.prefix),
+		backend.WithSecretSuffix(s.suffix),
+		backend.WithTimeout(s.timeout),
+		backend.WithLogger(s.l),
+	)
 
 	return s
 }
@@ -84,19 +101,19 @@ func (sfs sekretsFs) Mkdir(name string, perm os.FileMode) error {
 	return err
 }
 
-// MkdirAll does the same as Mkdir
+// MkdirAll calls Mkdir
 func (sfs sekretsFs) MkdirAll(path string, perm os.FileMode) error {
 	return sfs.Mkdir(path, perm)
 }
 
 // Open opens a file, returning it or an error, if any happens.
 func (sfs sekretsFs) Open(name string) (afero.File, error) {
-	return nil, nil
+	return nil, fmt.Errorf("not yet implemented")
 }
 
 // OpenFile opens a file using the given flags and the given mode.
 func (sfs sekretsFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	return nil, nil
+	return nil, fmt.Errorf("not yet implemented")
 }
 
 // Remove removes an empty secret or a key identified by name.
@@ -148,24 +165,24 @@ func (sfs sekretsFs) RemoveAll(path string) error {
 	return sfs.backend.Store(s)
 }
 
-// Rename renames (moves) oldpath to newpath. If newpath already exists and is not a directory, Rename replaces it.
-func (sfs sekretsFs) Rename(oldname, newname string) error {
-	osi, err := sfs.Stat(oldname)
+// Rename renames (moves) old to new. If new already exists and is not a directory, Rename replaces it.
+func (sfs sekretsFs) Rename(o, n string) error {
+	osi, err := sfs.Stat(o)
 	if err != nil {
 		return err
 	}
 
-	osec := osi.Sys().(*secret.Secret)
+	oldSecret := osi.Sys().(*secret.Secret)
 
-	nsi, err := sfs.Stat(newname)
+	nsi, err := sfs.Stat(n)
 	if err != nil {
 		return err
 	}
 
-	nsec := nsi.Sys().(*secret.Secret)
+	newSecret := nsi.Sys().(*secret.Secret)
 
 	// ns1/sec1 -> ns2/sec2
-	if osec.Namespace() != nsec.Namespace() {
+	if oldSecret.Namespace() != newSecret.Namespace() {
 		return errors.New("move a secret in a different namespaces is not allowed") // TODO: discuss
 	}
 
@@ -176,13 +193,13 @@ func (sfs sekretsFs) Rename(oldname, newname string) error {
 			return afero.ErrDestinationExists
 		}
 
-		nsec.SetData(osec.Data())
+		newSecret.SetData(oldSecret.Data())
 
-		if err := sfs.backend.Store(nsec); err != nil {
+		if err := sfs.backend.Store(newSecret); err != nil {
 			return err
 		}
 
-		return sfs.backend.Delete(osec)
+		return sfs.backend.Delete(oldSecret)
 	}
 
 	// move/rename key
@@ -194,26 +211,26 @@ func (sfs sekretsFs) Rename(oldname, newname string) error {
 		return afero.ErrFileNotFound
 	}
 
-	if osec.Path() == nsec.Path() {
+	if oldSecret.Path() == newSecret.Path() {
 		return nil
 	}
 
-	v, ok := osec.Get(osi.Name())
+	v, ok := oldSecret.Get(osi.Name())
 	if !ok {
 		return afero.ErrFileNotFound
 	}
 
-	nsec.Update(nsi.Name(), v)
+	newSecret.Update(nsi.Name(), v)
 
-	if err := sfs.backend.Store(nsec); err != nil {
+	if err := sfs.backend.Store(newSecret); err != nil {
 		return err
 	}
 
-	if err := osec.Delete(osi.Name()); err != nil {
+	if err := oldSecret.Delete(osi.Name()); err != nil {
 		return nil
 	}
 
-	return sfs.backend.Store(osec)
+	return sfs.backend.Store(oldSecret)
 }
 
 // Stat returns a FileInfo describing the named secret/key, or an error.

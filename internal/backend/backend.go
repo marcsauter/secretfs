@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
+
 	corev1 "k8s.io/api/core/v1"
 	apierr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,10 +28,11 @@ const (
 
 // backend implements the communication with Kubernetes
 type backend struct {
-	c          kubernetes.Interface
-	secretType corev1.SecretType
-	timeout    time.Duration
-	l          *zap.SugaredLogger
+	c       kubernetes.Interface
+	prefix  string
+	suffix  string
+	timeout time.Duration
+	l       *zap.SugaredLogger
 }
 
 // New returns a io.LoadStoreDeleter
@@ -48,7 +50,7 @@ func New(c kubernetes.Interface, opts ...Option) io.LoadStoreDeleter {
 }
 
 // Load secret from backend
-func (b *backend) Load(s io.Sekreter) error {
+func (b *backend) Load(s io.Secreter) error {
 	ks, err := b.get(s)
 
 	if apierr.IsNotFound(err) {
@@ -65,7 +67,7 @@ func (b *backend) Load(s io.Sekreter) error {
 }
 
 // Store secret in backend
-func (b *backend) Store(s io.Sekreter) error {
+func (b *backend) Store(s io.Secreter) error {
 	ks, err := b.get(s)
 
 	ks.Data = s.Data()
@@ -95,7 +97,7 @@ func (b *backend) Store(s io.Sekreter) error {
 }
 
 // Delete secret in backend
-func (b *backend) Delete(s io.Sekreter) error {
+func (b *backend) Delete(s io.Secreter) error {
 	_, err := b.get(s)
 	if apierr.IsNotFound(err) {
 		return nil
@@ -115,7 +117,7 @@ func (b *backend) Delete(s io.Sekreter) error {
 	return nil
 }
 
-func (b *backend) get(s io.Sekreter) (*corev1.Secret, error) {
+func (b *backend) get(s io.Secreter) (*corev1.Secret, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 

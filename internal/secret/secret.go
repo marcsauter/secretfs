@@ -53,7 +53,7 @@ func New(name string) (*Secret, error) {
 	return s, nil
 }
 
-var _ io.Sekreter = (*Secret)(nil)
+var _ io.Secreter = (*Secret)(nil)
 
 // Namespace returns the namespace name
 func (s *Secret) Namespace() string {
