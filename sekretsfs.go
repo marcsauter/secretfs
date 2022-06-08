@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/marcsauter/sekretsfs/internal/backend"
@@ -21,9 +22,9 @@ import (
 )
 
 const (
-	// DefaultSecretPrefix
+	// DefaultSecretPrefix for k8s secrets
 	DefaultSecretPrefix = ""
-	// DefaultSecretSuffix
+	// DefaultSecretSuffix for k8s secrets
 	DefaultSecretSuffix = ""
 	// DefaultRequestTimeout for k8s API requests
 	DefaultRequestTimeout = 5 * time.Second
@@ -38,7 +39,7 @@ type sekretsFs struct {
 	l       *zap.SugaredLogger
 }
 
-var _ afero.Fs = (*sekretsFs)(nil)
+var _ afero.Fs = (*sekretsFs)(nil) // https://pkg.go.dev/github.com/spf13/afero#Fs
 
 // New returns a new afero.Fs for handling k8s secrets as files
 func New(k kubernetes.Interface, opts ...Option) afero.Fs {
@@ -71,7 +72,7 @@ func (sfs sekretsFs) Create(name string) (afero.File, error) {
 	si, err := sfs.Stat(name)
 	if err == nil {
 		if si.IsDir() {
-			return nil, fmt.Errorf("%s is a secret", name)
+			return nil, fmt.Errorf("%s is a secret", name) // TODO: correct error
 		}
 	}
 
@@ -79,7 +80,7 @@ func (sfs sekretsFs) Create(name string) (afero.File, error) {
 
 	s.Update(si.Name(), nil)
 
-	return item.New(s, si.Name(), nil), sfs.backend.Store(s)
+	return item.New(sfs.backend, s, si.Name(), nil), sfs.backend.Store(s)
 }
 
 // Mkdir creates a new, empty secret
@@ -107,11 +108,13 @@ func (sfs sekretsFs) MkdirAll(path string, perm os.FileMode) error {
 }
 
 // Open opens a file, returning it or an error, if any happens.
+// Open opens the named file for reading. If successful, methods on the returned file can be used for reading; the associated file descriptor has mode O_RDONLY. If there is an error, it will be of type *PathError.
 func (sfs sekretsFs) Open(name string) (afero.File, error) {
 	return nil, fmt.Errorf("not yet implemented")
 }
 
 // OpenFile opens a file using the given flags and the given mode.
+// OpenFile is the generalized open call; most users will use Open or Create instead. It opens the named file with specified flag (O_RDONLY etc.). If the file does not exist, and the O_CREATE flag is passed, it is created with mode perm (before umask). If successful, methods on the returned File can be used for I/O. If there is an error, it will be of type *PathError.
 func (sfs sekretsFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
 	return nil, fmt.Errorf("not yet implemented")
 }
@@ -255,16 +258,17 @@ func (sfs sekretsFs) Name() string {
 // Chmod changes the mode of the named file to mode.
 // NOT IMPLEMENTED
 func (sfs sekretsFs) Chmod(name string, mode os.FileMode) error {
-	return nil
+	return syscall.EROFS
 }
 
 // Chown changes the uid and gid of the named file.
 // NOT IMPLEMENTED
 func (sfs sekretsFs) Chown(name string, uid, gid int) error {
-	return nil
+	return syscall.EROFS
 }
 
 // Chtimes changes the access and modification times of the named file
+// NOT IMPLEMENTED
 func (sfs sekretsFs) Chtimes(name string, atime, mtime time.Time) error {
-	return nil
+	return syscall.EROFS
 }

@@ -11,6 +11,12 @@ type Storer interface {
 	Store(Secreter) error
 }
 
+// LoadStorer is the interface that groups the basic Load and Store methods.
+type LoadStorer interface {
+	Loader
+	Storer
+}
+
 // Deleter is the interface that wraps the Delete method.
 type Deleter interface {
 	Delete(Secreter) error

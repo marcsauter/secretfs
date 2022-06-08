@@ -13,7 +13,7 @@ func TestNewItem(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s)
 
-	it := item.New(s, "key1", []byte("value1"))
+	it := item.New(nil, s, "key1", []byte("value1")) // TODO: use fake backend
 	require.NotNil(t, it)
 }
 
