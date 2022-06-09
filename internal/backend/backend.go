@@ -2,12 +2,12 @@
 package backend
 
 import (
-	"fmt"
+	"errors"
+	"os"
+	"sync"
+	"syscall"
 	"time"
 
-	"github.com/marcsauter/sekretsfs/internal/io"
-
-	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
 
@@ -26,17 +26,48 @@ const (
 	AnnotationValue = "v1"
 )
 
+var (
+	// ErrNotManaged for secrets not managed with sekretfs
+	ErrNotManaged = errors.New("not managed with sekretsfs")
+)
+
+// Metadata is the interface for basic metadata information
+type Metadata interface {
+	Namespace() string
+	Secret() string
+	Key() string
+}
+
+// Secret is the interface that abstracts the Kubernetes secret
+type Secret interface {
+	Metadata
+	Value() []byte
+	Data() map[string][]byte
+	SetData(map[string][]byte)
+}
+
+// Backend is the interface that groups the basic Create, Get, Update and Delete methods.
+type Backend interface {
+	Create(Secret) error
+	Get(Secret) error
+	Update(Secret) error
+	Delete(Secret) error
+	Rename(Metadata, Metadata) error
+}
+
 // backend implements the communication with Kubernetes
 type backend struct {
-	c       kubernetes.Interface
-	prefix  string
-	suffix  string
+	c      kubernetes.Interface
+	prefix string
+	suffix string
+
+	mu      sync.Mutex
 	timeout time.Duration
 	l       *zap.SugaredLogger
 }
 
-// New returns a io.LoadStoreDeleter
-func New(c kubernetes.Interface, opts ...Option) io.LoadStoreDeleter {
+// New returns a Backend
+func New(c kubernetes.Interface, opts ...Option) Backend {
 	b := &backend{
 		c:       c,
 		timeout: DefaultRequestTimeout,
@@ -49,12 +80,33 @@ func New(c kubernetes.Interface, opts ...Option) io.LoadStoreDeleter {
 	return b
 }
 
-// Load secret from backend
-func (b *backend) Load(s io.Secreter) error {
+// Create secret in backend
+func (b *backend) Create(s Secret) error {
+	ks := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: s.Secret(),
+			Annotations: map[string]string{
+				AnnotationKey: AnnotationValue,
+			},
+		},
+		Data: s.Data(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	_, err := b.c.CoreV1().Secrets(s.Namespace()).Create(ctx, ks, metav1.CreateOptions{})
+
+	return err
+}
+
+// Get secret from backend
+func (b *backend) Get(s Secret) error {
 	ks, err := b.get(s)
 
+	// map error
 	if apierr.IsNotFound(err) {
-		return afero.ErrFileNotFound
+		return syscall.ENOENT
 	}
 
 	if err != nil {
@@ -66,24 +118,17 @@ func (b *backend) Load(s io.Secreter) error {
 	return nil
 }
 
-// Store secret in backend
-func (b *backend) Store(s io.Secreter) error {
+// Update secret in backend
+func (b *backend) Update(s Secret) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	ks, err := b.get(s)
-
-	ks.Data = s.Data()
-
-	if apierr.IsNotFound(err) {
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		defer cancel()
-
-		_, err = b.c.CoreV1().Secrets(s.Namespace()).Create(ctx, ks, metav1.CreateOptions{})
-
-		return err
-	}
-
 	if err != nil {
 		return err
 	}
+
+	ks.Data[s.Key()] = s.Value()
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
@@ -97,8 +142,9 @@ func (b *backend) Store(s io.Secreter) error {
 }
 
 // Delete secret in backend
-func (b *backend) Delete(s io.Secreter) error {
+func (b *backend) Delete(s Secret) error {
 	_, err := b.get(s)
+
 	if apierr.IsNotFound(err) {
 		return nil
 	}
@@ -110,29 +156,62 @@ func (b *backend) Delete(s io.Secreter) error {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	if err := b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, s.Name(), metav1.DeleteOptions{}); err != nil {
+	if err := b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, s.Secret(), metav1.DeleteOptions{}); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (b *backend) get(s io.Secreter) (*corev1.Secret, error) {
+// Rename secret in backend
+func (b *backend) Rename(o, n Metadata) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	s, err := b.get(o)
+	// source not found
+	if apierr.IsNotFound(err) {
+		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: syscall.ENOENT}
+	}
+	// backend error
+	if err != nil {
+		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
+	}
+
+	_, err = b.get(n)
+	// target already exists
+	if err == nil {
+		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: syscall.EEXIST}
+	}
+	// backend error
+	if !apierr.IsNotFound(err) {
+		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
+	}
+
+	// rename
+	s.Name = n.Secret()
+
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	ks, err := b.c.CoreV1().Secrets(s.Namespace()).Get(ctx, s.Name(), metav1.GetOptions{})
-	if apierr.IsNotFound(err) {
-		return &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: s.Name(),
-				Annotations: map[string]string{
-					AnnotationKey: AnnotationValue,
-				},
-			},
-		}, err
+	// create new secret
+	if _, err := b.c.CoreV1().Secrets(n.Namespace()).Create(ctx, s, metav1.CreateOptions{}); err != nil {
+		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
 	}
 
+	// delete old secret
+	if err := b.c.CoreV1().Secrets(o.Namespace()).Delete(ctx, o.Secret(), metav1.DeleteOptions{}); err != nil {
+		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
+	}
+
+	return nil
+}
+
+func (b *backend) get(s Metadata) (*corev1.Secret, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	ks, err := b.c.CoreV1().Secrets(s.Namespace()).Get(ctx, s.Secret(), metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -141,5 +220,5 @@ func (b *backend) get(s io.Secreter) (*corev1.Secret, error) {
 		return ks, nil
 	}
 
-	return nil, fmt.Errorf("not managed with sekretsfs")
+	return nil, ErrNotManaged
 }

@@ -9,13 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"syscall"
 	"time"
 
 	"github.com/marcsauter/sekretsfs/internal/backend"
-	"github.com/marcsauter/sekretsfs/internal/io"
-	"github.com/marcsauter/sekretsfs/internal/item"
-	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
@@ -32,7 +30,7 @@ const (
 
 // sekretsFs implements afero.Fs for k8s secrets
 type sekretsFs struct {
-	backend io.LoadStoreDeleter
+	backend backend.Backend
 	prefix  string
 	suffix  string
 	timeout time.Duration
@@ -65,22 +63,16 @@ func New(k kubernetes.Interface, opts ...Option) afero.Fs {
 	return s
 }
 
+// Name of this FileSystem.
+func (sfs sekretsFs) Name() string {
+	return "SekretsFS"
+}
+
 // Create creates an key/value entry in the filesystem/secret
 // returning the file/entry and an error, if any happens.
 // https://pkg.go.dev/os#Create
 func (sfs sekretsFs) Create(name string) (afero.File, error) {
-	si, err := sfs.Stat(name)
-	if err == nil {
-		if si.IsDir() {
-			return nil, fmt.Errorf("%s is a secret", name) // TODO: correct error
-		}
-	}
-
-	s := si.Sys().(*secret.Secret)
-
-	s.Update(si.Name(), nil)
-
-	return item.New(sfs.backend, s, si.Name(), nil), sfs.backend.Store(s)
+	return FileCreate(sfs.backend, name)
 }
 
 // Mkdir creates a new, empty secret
@@ -92,7 +84,7 @@ func (sfs sekretsFs) Mkdir(name string, perm os.FileMode) error {
 			return fmt.Errorf("%s is not a secret", name)
 		}
 
-		return sfs.backend.Store(s.Sys().(*secret.Secret))
+		return sfs.backend.Update(s.Sys().(backend.Secret))
 	}
 
 	if err == nil {
@@ -103,18 +95,55 @@ func (sfs sekretsFs) Mkdir(name string, perm os.FileMode) error {
 }
 
 // MkdirAll calls Mkdir
-func (sfs sekretsFs) MkdirAll(path string, perm os.FileMode) error {
-	return sfs.Mkdir(path, perm)
+func (sfs sekretsFs) MkdirAll(p string, perm os.FileMode) error {
+	return sfs.Mkdir(p, perm)
 }
 
 // Open opens a file, returning it or an error, if any happens.
 // Open opens the named file for reading. If successful, methods on the returned file can be used for reading; the associated file descriptor has mode O_RDONLY. If there is an error, it will be of type *PathError.
 func (sfs sekretsFs) Open(name string) (afero.File, error) {
-	return nil, fmt.Errorf("not yet implemented")
+	return FileOpen(sfs.backend, name) // TODO: add readonly
 }
 
 // OpenFile opens a file using the given flags and the given mode.
 // OpenFile is the generalized open call; most users will use Open or Create instead. It opens the named file with specified flag (O_RDONLY etc.). If the file does not exist, and the O_CREATE flag is passed, it is created with mode perm (before umask). If successful, methods on the returned File can be used for I/O. If there is an error, it will be of type *PathError.
+/*  TODO: handle
+perm &= chmodBits
+chmod := false
+file, err := m.openWrite(name)
+if err == nil && (flag&os.O_EXCL > 0) {
+	return nil, &os.PathError{Op: "open", Path: name, Err: ErrFileExists}
+}
+if os.IsNotExist(err) && (flag&os.O_CREATE > 0) {
+	file, err = m.Create(name)
+	chmod = true
+}
+if err != nil {
+	return nil, err
+}
+if flag == os.O_RDONLY {
+	file = mem.NewReadOnlyFileHandle(file.(*mem.File).Data())
+}
+if flag&os.O_APPEND > 0 {
+	_, err = file.Seek(0, os.SEEK_END)
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+}
+if flag&os.O_TRUNC > 0 && flag&(os.O_RDWR|os.O_WRONLY) > 0 {
+	err = file.Truncate(0)
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+}
+if chmod {
+	return file, m.setFileMode(name, perm)
+}
+return file, nil
+*/
+
 func (sfs sekretsFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
 	return nil, fmt.Errorf("not yet implemented")
 }
@@ -126,10 +155,10 @@ func (sfs sekretsFs) Remove(name string) error {
 		return err
 	}
 
-	s := si.Sys().(*secret.Secret)
+	s := si.Sys().(*File)
 
 	if si.IsDir() {
-		if len(s.Data()) != 0 {
+		if s.isEmptyDir() {
 			return fmt.Errorf("secret is not empty")
 		}
 
@@ -137,17 +166,17 @@ func (sfs sekretsFs) Remove(name string) error {
 	}
 
 	// remove secret key
-	if err := s.Delete(si.Name()); err != nil {
+	if err := s.deleteFile(si.Name()); err != nil {
 		return err
 	}
 
-	return sfs.backend.Store(s)
+	return sfs.backend.Update(s)
 }
 
 // RemoveAll removes a secret or key with all it contains.
 // It does not fail if the path does not exist (return nil).
-func (sfs sekretsFs) RemoveAll(path string) error {
-	si, err := sfs.Stat(path)
+func (sfs sekretsFs) RemoveAll(p string) error {
+	si, err := sfs.Stat(p)
 	if errors.Is(err, afero.ErrFileNotFound) {
 		return nil
 	}
@@ -156,103 +185,100 @@ func (sfs sekretsFs) RemoveAll(path string) error {
 		return err
 	}
 
-	s := si.Sys().(*secret.Secret)
+	s := si.Sys().(*File)
 
 	if si.IsDir() {
 		return sfs.backend.Delete(s) // remove secret
 	}
 
 	// remove secret key
-	_ = s.Delete(si.Name())
+	_ = s.deleteFile(si.Name())
 
-	return sfs.backend.Store(s)
+	return sfs.backend.Update(s)
 }
 
-// Rename renames (moves) old to new. If new already exists and is not a directory, Rename replaces it.
+// Rename moves old to new. If new already exists and is not a directory, Rename replaces it.
 func (sfs sekretsFs) Rename(o, n string) error {
-	osi, err := sfs.Stat(o)
+	oldSp, err := newSecretPath(o)
 	if err != nil {
-		return err
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
 	}
 
-	oldSecret := osi.Sys().(*secret.Secret)
-
-	nsi, err := sfs.Stat(n)
+	newSp, err := newSecretPath(n)
 	if err != nil {
-		return err
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
 	}
 
-	newSecret := nsi.Sys().(*secret.Secret)
-
+	// move secret in a different namespace - currently not allowed
 	// ns1/sec1 -> ns2/sec2
-	if oldSecret.Namespace() != newSecret.Namespace() {
-		return errors.New("move a secret in a different namespaces is not allowed") // TODO: discuss
+	// TODO: discuss
+	if oldSp.Namespace() != newSp.Namespace() {
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: errors.New("move a secret between namespaces is not allowed")}
 	}
 
-	// move/rename secret
+	// rename secret
 	// sec1 -> sec2
-	if osi.IsDir() {
-		if nsi.IsDir() { // ???
-			return afero.ErrDestinationExists
+	if oldSp.IsDir() {
+		if newSp.IsDir() {
+			return sfs.backend.Rename(oldSp, newSp)
 		}
 
-		newSecret.SetData(oldSecret.Data())
-
-		if err := sfs.backend.Store(newSecret); err != nil {
-			return err
-		}
-
-		return sfs.backend.Delete(oldSecret)
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: errors.New("move a secret to an item is not allowed")}
 	}
 
 	// move/rename key
-	// sec1/key1 -> sec2 // move key1 from sec1 to sec2 // sec2 must exist
+	ofi, err := FileOpen(sfs.backend, o)
+	if err != nil {
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
+	}
+
 	// sec1/key1 -> sec1/key2 // rename key
+	if oldSp.Secret() == newSp.Secret() {
+		ofi.renameFile(oldSp.Key(), newSp.Key())
+
+		return ofi.Sync()
+	}
+
+	// sec1/key1 -> sec2 // move key1 from sec1 to sec2 // sec2 must exist
 	// sec1/key1 -> sec2/key2 // move key1 as key2 to sec2 // sec2 must exist, sec2/key2 will be replaced
-
-	if !nsi.IsDir() { // ???
-		return afero.ErrFileNotFound
+	name := oldSp.Key()
+	if !newSp.IsDir() {
+		name = newSp.Key()
 	}
 
-	if oldSecret.Path() == newSecret.Path() {
-		return nil
+	// create new item
+	nfi, err := FileCreate(sfs.backend, path.Join(newSp.Namespace(), newSp.Secret(), name))
+	if err != nil {
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
 	}
 
-	v, ok := oldSecret.Get(osi.Name())
-	if !ok {
-		return afero.ErrFileNotFound
+	nfi.value = ofi.value
+
+	if err := nfi.Sync(); err != nil {
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
 	}
 
-	newSecret.Update(nsi.Name(), v)
-
-	if err := sfs.backend.Store(newSecret); err != nil {
-		return err
+	// delete old item
+	if err := ofi.deleteFile(ofi.key); err != nil {
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
 	}
 
-	if err := oldSecret.Delete(osi.Name()); err != nil {
-		return nil
-	}
-
-	return sfs.backend.Store(oldSecret)
+	return ofi.Sync()
 }
 
 // Stat returns a FileInfo describing the named secret/key, or an error.
 func (sfs sekretsFs) Stat(name string) (os.FileInfo, error) {
-	s, err := secret.New(name)
+	// TODO: does not work for directory/secret
+	s, err := FileOpen(sfs.backend, name)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := sfs.backend.Load(s); err != nil {
+	if err := sfs.backend.Get(s); err != nil {
 		return s, err
 	}
 
 	return s, nil
-}
-
-// Name of this FileSystem.
-func (sfs sekretsFs) Name() string {
-	return "SekretsFS"
 }
 
 // Chmod changes the mode of the named file to mode.

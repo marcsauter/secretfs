@@ -1,6 +1,7 @@
-package secret
+package sekretsfs
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,7 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range invalid {
-			p, err := splitPath(n)
+			p, err := newSecretPath(n)
 			assert.Error(t, err)
 			assert.Nil(t, p)
 		}
@@ -39,9 +40,10 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range valid {
-			p, err := splitPath(n)
+			p, err := newSecretPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
+			assert.Equal(t, strings.Trim(n, "/"), p.Absolute())
 		}
 	})
 
@@ -54,7 +56,7 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range validDir {
-			p, err := splitPath(n)
+			p, err := newSecretPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 			assert.True(t, p.IsDir())
@@ -73,7 +75,7 @@ func TestPath(t *testing.T) {
 		}
 
 		for _, n := range validDir {
-			p, err := splitPath(n)
+			p, err := newSecretPath(n)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 			assert.False(t, p.IsDir())
