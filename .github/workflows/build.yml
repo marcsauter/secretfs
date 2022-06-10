@@ -17,6 +17,7 @@ jobs:
       uses: golangci/golangci-lint-action@master
       with:
         version: v1.45.2
+        args: -v --timeout=5m --out-format=code-climate
   test:
     runs-on: ubuntu-latest
     steps:
