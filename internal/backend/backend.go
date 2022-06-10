@@ -22,21 +22,21 @@ import (
 const (
 	// DefaultRequestTimeout for k8s requests
 	DefaultRequestTimeout = 5 * time.Second
-	// LabelKey is the name of the sekretsfs label
-	LabelKey = "sekretsfs"
-	// LabelValue is the value for sekretsfs label
+	// LabelKey is the name of the secfs label
+	LabelKey = "secfs"
+	// LabelValue is the value for secfs label
 	LabelValue = ""
-	// AnnotationKey is the name of the sekretsfs annotation
-	AnnotationKey = "sekretsfs"
-	// AnnotationValue is the sekretsfs version
+	// AnnotationKey is the name of the secfs annotation
+	AnnotationKey = "secfs"
+	// AnnotationValue is the secfs version
 	AnnotationValue = "v1"
 	// ModTimeKey is the name of the modification time annotation
 	ModTimeKey = "modtime"
 )
 
 var (
-	// ErrNotManaged for secrets not managed with sekretfs
-	ErrNotManaged = errors.New("not managed with sekretsfs")
+	// ErrNotManaged for secrets not managed with secfs
+	ErrNotManaged = errors.New("not managed with secfs")
 )
 
 // Metadata is the interface for basic metadata information

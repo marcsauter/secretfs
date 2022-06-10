@@ -1,4 +1,4 @@
-package sekretsfs_test
+package secfs_test
 
 import (
 	"io/fs"
@@ -6,8 +6,8 @@ import (
 	"path"
 	"testing"
 
-	"github.com/marcsauter/sekretsfs"
-	"github.com/marcsauter/sekretsfs/internal/backend"
+	"github.com/marcsauter/secfs"
+	"github.com/marcsauter/secfs/internal/backend"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,14 +24,14 @@ func TestFileInterfaces(t *testing.T) {
 	cs := backend.NewFakeClientset()
 
 	// prepare
-	sfs := sekretsfs.New(cs)
+	sfs := secfs.New(cs)
 	err := sfs.Mkdir(secretname, os.FileMode(0))
 	require.NoError(t, err)
 
 	b := backend.New(cs)
 
 	t.Run("FileCreate", func(t *testing.T) {
-		f, err := sekretsfs.FileCreate(b, filename)
+		f, err := secfs.FileCreate(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
@@ -52,7 +52,7 @@ func TestFileInterfaces(t *testing.T) {
 	})
 
 	t.Run("Open file", func(t *testing.T) {
-		f, err := sekretsfs.Open(b, filename)
+		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
@@ -71,7 +71,7 @@ func TestFileInterfaces(t *testing.T) {
 	})
 
 	t.Run("Open secret", func(t *testing.T) {
-		f, err := sekretsfs.Open(b, secretname)
+		f, err := secfs.Open(b, secretname)
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
@@ -92,7 +92,7 @@ func TestFileInterfaces(t *testing.T) {
 
 /*
 func TestNewSecretKeyAndAferoFileInfoInterface(t *testing.T) {
-	s, err := sekretsfs.FileOpen("/default/testsecret/tls.crt")
+	s, err := secfs.FileOpen("/default/testsecret/tls.crt")
 	require.NoError(t, err)
 	require.NotNil(t, s)
 

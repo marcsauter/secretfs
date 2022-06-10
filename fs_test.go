@@ -1,4 +1,4 @@
-package sekretsfs_test
+package secfs_test
 
 import (
 	"io/fs"
@@ -7,18 +7,18 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/marcsauter/sekretsfs"
-	"github.com/marcsauter/sekretsfs/internal/backend"
+	"github.com/marcsauter/secfs"
+	"github.com/marcsauter/secfs/internal/backend"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestFSName(t *testing.T) {
-	sfs := sekretsfs.New(nil)
+	sfs := secfs.New(nil)
 	require.NotNil(t, sfs)
 
-	assert.Equal(t, "SekretsFS", sfs.Name())
+	assert.Equal(t, "secfs", sfs.Name())
 }
 
 func TestCreateOpen(t *testing.T) {
@@ -29,7 +29,7 @@ func TestCreateOpen(t *testing.T) {
 	secretname := path.Join(namespace, secret)
 	filename := path.Join(namespace, secret, key)
 
-	sfs := sekretsfs.New(backend.NewFakeClientset())
+	sfs := secfs.New(backend.NewFakeClientset())
 	require.NotNil(t, sfs)
 
 	t.Run("Create secret", func(t *testing.T) {

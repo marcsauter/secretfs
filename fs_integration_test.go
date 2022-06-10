@@ -1,4 +1,4 @@
-package sekretsfs_test
+package secfs_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcsauter/sekretsfs"
+	"github.com/marcsauter/secfs"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/kubernetes"
@@ -72,7 +72,7 @@ func TestMain(m *testing.M) {
 }
 
 func testFs(t *testing.T) afero.Fs {
-	sfs := sekretsfs.New(clientset, sekretsfs.WithSecretLabels(map[string]string{
+	sfs := secfs.New(clientset, secfs.WithSecretLabels(map[string]string{
 		testLabel: "",
 	}))
 	require.NotNil(t, sfs)
@@ -80,7 +80,7 @@ func testFs(t *testing.T) afero.Fs {
 	return sfs
 }
 
-func TestSekretsfsSecret(t *testing.T) {
+func TestsecfsSecret(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}
@@ -118,7 +118,7 @@ func TestSekretsfsSecret(t *testing.T) {
 	})
 }
 
-func TestSekretsfsFile(t *testing.T) {
+func TestsecfsFile(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}

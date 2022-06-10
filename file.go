@@ -1,4 +1,4 @@
-package sekretsfs
+package secfs
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/marcsauter/sekretsfs/internal/backend"
+	"github.com/marcsauter/secfs/internal/backend"
 	"github.com/spf13/afero"
 )
 

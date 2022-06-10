@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcsauter/sekretsfs/internal/backend"
+	"github.com/marcsauter/secfs/internal/backend"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +15,7 @@ func TestBackend(t *testing.T) {
 	cs := backend.NewFakeClientset()
 	b := backend.New(cs)
 
-	t.Run("get secret not managed with sekretsfs", func(t *testing.T) {
+	t.Run("get secret not managed with secfs", func(t *testing.T) {
 		s, err := newFakeSecret("default", "notmanaged", "", []byte{})
 		require.NoError(t, err)
 

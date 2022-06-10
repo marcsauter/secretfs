@@ -1,4 +1,4 @@
-package sekretsfs
+package secfs
 
 import (
 	"strings"

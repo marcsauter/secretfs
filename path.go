@@ -1,11 +1,11 @@
-package sekretsfs
+package secfs
 
 import (
 	"path"
 	"strings"
 	"syscall"
 
-	"github.com/marcsauter/sekretsfs/internal/backend"
+	"github.com/marcsauter/secfs/internal/backend"
 )
 
 type secretPath struct {
