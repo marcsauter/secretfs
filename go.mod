@@ -5,7 +5,6 @@ go 1.17
 require (
 	github.com/spf13/afero v1.8.2
 	github.com/stretchr/testify v1.7.1
-	github.com/tj/assert v0.0.3
 	go.uber.org/zap v1.21.0
 	golang.org/x/net v0.0.0-20220524220425-1d687d428aca
 	k8s.io/api v0.24.0

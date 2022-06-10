@@ -17,13 +17,21 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// TODO: custom labels?
+
 const (
 	// DefaultRequestTimeout for k8s requests
 	DefaultRequestTimeout = 5 * time.Second
+	// LabelKey is the name of the sekretsfs label
+	LabelKey = "sekretsfs"
+	// LabelValue is the value for sekretsfs label
+	LabelValue = ""
 	// AnnotationKey is the name of the sekretsfs annotation
 	AnnotationKey = "sekretsfs"
 	// AnnotationValue is the sekretsfs version
 	AnnotationValue = "v1"
+	// ModTimeKey is the name of the modification time annotation
+	ModTimeKey = "modtime"
 )
 
 var (
@@ -44,6 +52,8 @@ type Secret interface {
 	Value() []byte
 	Data() map[string][]byte
 	SetData(map[string][]byte)
+	SetTime(time.Time)
+	Delete() bool
 }
 
 // Backend is the interface that groups the basic Create, Get, Update and Delete methods.
@@ -60,6 +70,7 @@ type backend struct {
 	c      kubernetes.Interface
 	prefix string
 	suffix string
+	labels map[string]string
 
 	mu      sync.Mutex
 	timeout time.Duration
@@ -84,13 +95,16 @@ func New(c kubernetes.Interface, opts ...Option) Backend {
 func (b *backend) Create(s Secret) error {
 	ks := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: s.Secret(),
+			Name:   s.Secret(),
+			Labels: b.labels,
 			Annotations: map[string]string{
 				AnnotationKey: AnnotationValue,
 			},
 		},
 		Data: s.Data(),
 	}
+
+	setCurrentTime(ks)
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
@@ -114,6 +128,7 @@ func (b *backend) Get(s Secret) error {
 	}
 
 	s.SetData(ks.Data)
+	s.SetTime(getTime(ks))
 
 	return nil
 }
@@ -128,7 +143,14 @@ func (b *backend) Update(s Secret) error {
 		return err
 	}
 
-	ks.Data[s.Key()] = s.Value()
+	if s.Delete() {
+		delete(ks.Data, s.Key())
+	} else {
+		ks.Data[s.Key()] = s.Value()
+	}
+
+	setCurrentTime(ks)
+	s.SetTime(getTime(ks))
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
@@ -190,6 +212,7 @@ func (b *backend) Rename(o, n Metadata) error {
 
 	// rename
 	s.Name = n.Secret()
+	setCurrentTime(s)
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
@@ -216,9 +239,28 @@ func (b *backend) get(s Metadata) (*corev1.Secret, error) {
 		return nil, err
 	}
 
+	if ks.Data == nil {
+		ks.Data = make(map[string][]byte)
+	}
+
 	if v, ok := ks.Annotations[AnnotationKey]; ok && v == AnnotationValue {
 		return ks, nil
 	}
 
 	return nil, ErrNotManaged
+}
+
+// internal
+
+func setCurrentTime(s *corev1.Secret) {
+	s.Annotations[ModTimeKey] = time.Now().Format(time.RFC3339)
+}
+
+func getTime(s *corev1.Secret) time.Time {
+	t, err := time.Parse(time.RFC3339, s.Annotations[ModTimeKey])
+	if err != nil {
+		return time.Now()
+	}
+
+	return t
 }

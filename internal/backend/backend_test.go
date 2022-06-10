@@ -3,23 +3,17 @@ package backend_test
 import (
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/marcsauter/sekretsfs/internal/backend"
 	"github.com/stretchr/testify/require"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
+// TODO: test Delete()
+
 func TestBackend(t *testing.T) {
-	c := fake.NewSimpleClientset(&v1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "notmanaged",
-			Namespace:   "default",
-			Annotations: map[string]string{},
-		},
-	})
-	b := backend.New(c)
+	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
 
 	t.Run("get secret not managed with sekretsfs", func(t *testing.T) {
 		s, err := newFakeSecret("default", "notmanaged", "", []byte{})
@@ -129,7 +123,6 @@ func TestBackend(t *testing.T) {
 		err = b.Delete(s)
 		require.NoError(t, err)
 	})
-
 }
 
 type fakeSecret struct {
@@ -138,6 +131,7 @@ type fakeSecret struct {
 	key       string
 	value     []byte
 	data      map[string][]byte
+	mtime     time.Time
 }
 
 func newFakeSecret(ns, s, k string, v []byte) (backend.Secret, error) {
@@ -168,4 +162,12 @@ func (s *fakeSecret) Data() map[string][]byte {
 
 func (s *fakeSecret) SetData(data map[string][]byte) {
 	s.data = data
+}
+
+func (s *fakeSecret) SetTime(mtime time.Time) {
+	s.mtime = mtime
+}
+
+func (s *fakeSecret) Delete() bool {
+	return false
 }

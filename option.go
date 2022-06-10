@@ -23,6 +23,13 @@ func WithSecretSuffix(x string) Option {
 	}
 }
 
+// WithSecretLabels configures a custom secret labels
+func WithSecretLabels(labels map[string]string) Option {
+	return func(s *sekretsFs) {
+		s.labels = labels
+	}
+}
+
 // WithTimeout configures a custom request timeout
 func WithTimeout(t time.Duration) Option {
 	return func(s *sekretsFs) {

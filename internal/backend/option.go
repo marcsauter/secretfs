@@ -40,6 +40,13 @@ func WithTimeout(t time.Duration) Option {
 	}
 }
 
+// WithSecretLabels configures a custom secret labels
+func WithSecretLabels(labels map[string]string) Option {
+	return func(b *backend) {
+		b.labels = labels
+	}
+}
+
 // WithLogger configures a logger
 func WithLogger(l *zap.SugaredLogger) Option {
 	return func(b *backend) {

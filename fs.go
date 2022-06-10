@@ -33,6 +33,7 @@ type sekretsFs struct {
 	backend backend.Backend
 	prefix  string
 	suffix  string
+	labels  map[string]string
 	timeout time.Duration
 	l       *zap.SugaredLogger
 }
@@ -56,6 +57,7 @@ func New(k kubernetes.Interface, opts ...Option) afero.Fs {
 	s.backend = backend.New(k,
 		backend.WithSecretPrefix(s.prefix),
 		backend.WithSecretSuffix(s.suffix),
+		backend.WithSecretLabels(s.labels),
 		backend.WithTimeout(s.timeout),
 		backend.WithLogger(s.l),
 	)
@@ -78,20 +80,26 @@ func (sfs sekretsFs) Create(name string) (afero.File, error) {
 // Mkdir creates a new, empty secret
 // return an error if any happens.
 func (sfs sekretsFs) Mkdir(name string, perm os.FileMode) error {
-	s, err := sfs.Stat(name)
-	if errors.Is(err, afero.ErrFileNotFound) {
-		if !s.IsDir() {
-			return fmt.Errorf("%s is not a secret", name)
-		}
-
-		return sfs.backend.Update(s.Sys().(backend.Secret))
+	s, err := newFile(name)
+	if err != nil {
+		return err
 	}
+
+	if !s.IsDir() {
+		return syscall.ENOTDIR
+	}
+
+	_, err = Open(sfs.backend, name)
 
 	if err == nil {
-		return afero.ErrFileExists
+		return syscall.EEXIST
 	}
 
-	return err
+	if !errors.Is(err, syscall.ENOENT) {
+		return err
+	}
+
+	return sfs.backend.Create(s)
 }
 
 // MkdirAll calls Mkdir
@@ -102,7 +110,7 @@ func (sfs sekretsFs) MkdirAll(p string, perm os.FileMode) error {
 // Open opens a file, returning it or an error, if any happens.
 // Open opens the named file for reading. If successful, methods on the returned file can be used for reading; the associated file descriptor has mode O_RDONLY. If there is an error, it will be of type *PathError.
 func (sfs sekretsFs) Open(name string) (afero.File, error) {
-	return FileOpen(sfs.backend, name) // TODO: add readonly
+	return Open(sfs.backend, name) // TODO: add readonly
 }
 
 // OpenFile opens a file using the given flags and the given mode.
@@ -158,17 +166,15 @@ func (sfs sekretsFs) Remove(name string) error {
 	s := si.Sys().(*File)
 
 	if si.IsDir() {
-		if s.isEmptyDir() {
-			return fmt.Errorf("secret is not empty")
+		if !s.isEmptyDir() {
+			return syscall.ENOTEMPTY
 		}
 
 		return sfs.backend.Delete(s) // remove empty secret
 	}
 
 	// remove secret key
-	if err := s.deleteFile(si.Name()); err != nil {
-		return err
-	}
+	s.delete = true
 
 	return sfs.backend.Update(s)
 }
@@ -192,7 +198,7 @@ func (sfs sekretsFs) RemoveAll(p string) error {
 	}
 
 	// remove secret key
-	_ = s.deleteFile(si.Name())
+	s.delete = true
 
 	return sfs.backend.Update(s)
 }
@@ -227,7 +233,7 @@ func (sfs sekretsFs) Rename(o, n string) error {
 	}
 
 	// move/rename key
-	ofi, err := FileOpen(sfs.backend, o)
+	ofi, err := Open(sfs.backend, o)
 	if err != nil {
 		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
 	}
@@ -259,26 +265,14 @@ func (sfs sekretsFs) Rename(o, n string) error {
 	}
 
 	// delete old item
-	if err := ofi.deleteFile(ofi.key); err != nil {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
-	}
+	ofi.delete = true
 
 	return ofi.Sync()
 }
 
 // Stat returns a FileInfo describing the named secret/key, or an error.
 func (sfs sekretsFs) Stat(name string) (os.FileInfo, error) {
-	// TODO: does not work for directory/secret
-	s, err := FileOpen(sfs.backend, name)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := sfs.backend.Get(s); err != nil {
-		return s, err
-	}
-
-	return s, nil
+	return Open(sfs.backend, name)
 }
 
 // Chmod changes the mode of the named file to mode.

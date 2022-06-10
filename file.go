@@ -2,7 +2,6 @@ package sekretsfs
 
 import (
 	"bytes"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -24,12 +23,12 @@ type File struct {
 	value []byte
 	data  map[string][]byte
 
-	size  int64
 	mtime time.Time
 	mode  fs.FileMode
 
 	readonly bool
 	closed   bool
+	delete   bool
 
 	TLS bool // TODO: corev1.SecretTypeTLS
 
@@ -40,184 +39,212 @@ type File struct {
 func newFile(name string) (*File, error) {
 	p, err := newSecretPath(name)
 	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+		return nil, err
 	}
 
-	if p.isDir {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: syscall.EISDIR}
+	mode := os.FileMode(0)
+	if p.IsDir() {
+		mode = os.ModeDir
 	}
 
 	return &File{
 		name:     name,
 		spath:    p,
 		key:      p.Key(),
+		data:     make(map[string][]byte),
+		mode:     mode,
 		readonly: true,
 	}, nil
 }
 
-// FileOpen returns a secret item
-// Secret is also afero.File and os.FileInfo
-func FileOpen(b backend.Backend, name string) (*File, error) {
-	s, err := newFile(name)
+// Open open a secret or file
+// File implements afero.File and os.FileInfo
+func Open(b backend.Backend, name string) (*File, error) {
+	f, err := newFile(name)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := b.Get(s); err != nil {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 	}
 
-	v, ok := s.data[s.key]
+	f.backend = b
+
+	if err := b.Get(f); err != nil {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+	}
+
+	if f.IsDir() {
+		return f, nil
+	}
+
+	v, ok := f.data[f.key]
 	if !ok {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: syscall.ENOENT}
 	}
 
-	s.value = v
-	s.backend = b
+	f.value = v
 
-	return s, nil
+	return f, nil
 }
 
-// FileCreate returns a new or truncated secret item
+// FileCreate create a new or truncated file
+// File implements afero.File and os.FileInfo
 func FileCreate(b backend.Backend, name string) (*File, error) {
-	s, err := newFile(name)
+	f, err := newFile(name)
 	if err != nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "create", Path: name, Err: err}
 	}
 
-	if err := b.Get(s); err != nil {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: err}
+	if f.IsDir() {
+		return nil, &fs.PathError{Op: "create", Path: name, Err: syscall.EISDIR}
+	}
+
+	if err := b.Get(f); err != nil {
+		return nil, &fs.PathError{Op: "create", Path: name, Err: syscall.ENOENT}
+	}
+
+	if _, ok := f.data[f.key]; ok {
+		return nil, &fs.PathError{Op: "create", Path: name, Err: syscall.EEXIST}
 	}
 
 	// TODO: create with truncate only if o_creat
+	f.data[f.key] = make([]byte, 0)
 
-	if err := b.Update(s); err != nil {
+	if err := b.Update(f); err != nil {
 		return nil, &fs.PathError{Op: "create", Path: name, Err: err}
 	}
 
-	s.readonly = false
-	s.backend = b
+	f.mtime = time.Now()
+	f.readonly = false
+	f.backend = b
 
-	return s, nil
+	return f, nil
 }
 
 var _ backend.Secret = (*File)(nil)
 
 // Namespace returns the namespace name
-func (s *File) Namespace() string {
-	return s.spath.Namespace()
+func (f *File) Namespace() string {
+	return f.spath.Namespace()
 }
 
 // Secret returns the name of the secret
-func (s *File) Secret() string {
-	return s.spath.Secret()
+func (f *File) Secret() string {
+	return f.spath.Secret()
 }
 
 // Key returns the file name
-func (s *File) Key() string {
-	return s.key
+func (f *File) Key() string {
+	return f.key
+}
+
+// Delete key
+func (f *File) Delete() bool {
+	return f.delete
 }
 
 // Value returns the file content
-func (s *File) Value() []byte {
-	return s.value
+func (f *File) Value() []byte {
+	return f.value
 }
 
 // Data returns the underlying secret data map
-func (s *File) Data() map[string][]byte {
-	return s.data
+func (f *File) Data() map[string][]byte {
+	return f.data
 }
 
 // SetData sets the secret data map
-func (s *File) SetData(data map[string][]byte) {
-	s.data = data
-	s.size = int64(len(s.data))
+func (f *File) SetData(data map[string][]byte) {
+	f.data = data
+}
+
+// SetTime sets the secret mtime
+func (f *File) SetTime(mtime time.Time) {
+	f.mtime = mtime
 }
 
 var _ afero.File = (*File)(nil)  // https://pkg.go.dev/github.com/spf13/afero#File
 var _ os.FileInfo = (*File)(nil) // https://pkg.go.dev/io/fs#FileInfo
 
 // Close io.Closer
-func (s *File) Close() error {
-	if s.closed {
+func (f *File) Close() error {
+	if f.closed {
 		return afero.ErrFileClosed
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := s.Sync(); err != nil {
+	if err := f.Sync(); err != nil {
 		return err
 	}
 
-	s.closed = true
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.closed = true
 
 	return nil
 }
 
 // Read io.Reader
 // https://pkg.go.dev/io#Reader
-func (s *File) Read(p []byte) (n int, err error) {
-	if s.spath.IsDir() {
+func (f *File) Read(p []byte) (n int, err error) {
+	if f.spath.IsDir() {
 		return 0, syscall.EISDIR
 	}
 
-	if s.closed {
+	if f.closed {
 		return 0, afero.ErrFileClosed
 	}
 
-	return bytes.NewReader(s.value).Read(p)
+	return bytes.NewReader(f.value).Read(p)
 }
 
 // ReadAt io.ReaderAt
 // https://pkg.go.dev/io#ReaderAt
-func (s *File) ReadAt(p []byte, off int64) (n int, err error) {
-	if s.spath.IsDir() {
+func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
+	if f.spath.IsDir() {
 		return 0, syscall.EISDIR
 	}
 
-	if s.closed {
+	if f.closed {
 		return 0, afero.ErrFileClosed
 	}
 
-	return bytes.NewReader(s.value).Read(p)
+	return bytes.NewReader(f.value).Read(p)
 }
 
 // Seek io.Seeker
 // https://pkg.go.dev/io#Seeker
-func (s *File) Seek(offset int64, whence int) (int64, error) {
-	if s.spath.IsDir() {
+func (f *File) Seek(offset int64, whence int) (int64, error) {
+	if f.spath.IsDir() {
 		return 0, syscall.EISDIR
 	}
 
-	if s.closed {
+	if f.closed {
 		return 0, afero.ErrFileClosed
 	}
 
-	return bytes.NewReader(s.value).Seek(offset, whence)
+	return bytes.NewReader(f.value).Seek(offset, whence)
 }
 
 // Write io.Writer
 // https://pkg.go.dev/io#Writer
-func (s *File) Write(p []byte) (n int, err error) {
-	if s.spath.IsDir() {
+func (f *File) Write(p []byte) (n int, err error) {
+	if f.spath.IsDir() {
 		return 0, syscall.EISDIR
 	}
 
-	if s.closed {
+	if f.closed {
 		return 0, afero.ErrFileClosed
 	}
 
-	b := bytes.NewBuffer(s.value)
+	b := bytes.NewBuffer(f.value)
 
 	n, err = b.Write(p)
 	if err != nil {
 		return 0, err
 	}
 
-	s.mu.Lock()
-	s.value = b.Bytes()
-	s.mu.Unlock()
+	f.mu.Lock()
+	f.value = b.Bytes()
+	f.mu.Unlock()
 
 	return n, nil
 }
@@ -225,53 +252,53 @@ func (s *File) Write(p []byte) (n int, err error) {
 // WriteAt io.WriterAt
 // https://pkg.go.dev/io#WriterAt
 // Source: https://github.com/aws/aws-sdk-go/blob/e8afe81156c70d5bf7b6d2ed5aeeb609ea3ba3f8/aws/types.go#L183
-func (s *File) WriteAt(p []byte, off int64) (n int, err error) {
-	if s.spath.IsDir() {
+func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
+	if f.spath.IsDir() {
 		return 0, syscall.EISDIR
 	}
 
-	if s.closed {
+	if f.closed {
 		return 0, afero.ErrFileClosed
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	pLen := len(p)
 	expLen := off + int64(pLen)
 
-	if int64(len(s.value)) < expLen {
-		if int64(cap(s.value)) < expLen {
+	if int64(len(f.value)) < expLen {
+		if int64(cap(f.value)) < expLen {
 			buf := make([]byte, expLen)
-			copy(buf, s.value)
-			s.value = buf
+			copy(buf, f.value)
+			f.value = buf
 		}
 
-		s.value = s.value[:expLen]
+		f.value = f.value[:expLen]
 	}
 
-	copy(s.value[off:], p)
+	copy(f.value[off:], p)
 
 	return pLen, nil
 }
 
-// Name returns the secret or item name (afero.File, io.FileInfo)
-func (s *File) Name() string {
-	return s.spath.Name()
+// Name returns the name of the secret or file (afero.File, io.FileInfo)
+func (f *File) Name() string {
+	return f.spath.Name()
 }
 
 // Readdir (afero.File)
-func (s *File) Readdir(count int) ([]os.FileInfo, error) {
-	if !s.spath.IsDir() {
-		return nil, &fs.PathError{Op: "read", Path: s.Name(), Err: syscall.ENOTDIR}
+func (f *File) Readdir(count int) ([]os.FileInfo, error) {
+	if !f.spath.IsDir() {
+		return nil, &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.ENOTDIR}
 	}
 
 	entries := []os.FileInfo{}
 
-	for n := range s.data {
+	for n := range f.data {
 		p := &secretPath{
-			namespace: s.spath.Namespace(),
-			secret:    s.spath.Secret(),
+			namespace: f.spath.Namespace(),
+			secret:    f.spath.Secret(),
 			key:       n,
 			isDir:     false,
 		}
@@ -290,8 +317,8 @@ func (s *File) Readdir(count int) ([]os.FileInfo, error) {
 }
 
 // Readdirnames (afero.File)
-func (s *File) Readdirnames(n int) ([]string, error) {
-	fi, err := s.Readdir(n)
+func (f *File) Readdirnames(n int) ([]string, error) {
+	fi, err := f.Readdir(n)
 
 	names := make([]string, len(fi))
 	for i, f := range fi {
@@ -302,100 +329,79 @@ func (s *File) Readdirnames(n int) ([]string, error) {
 }
 
 // Stat (afero.File)
-func (s *File) Stat() (os.FileInfo, error) {
-	return nil, fmt.Errorf("not yet implemented")
+func (f *File) Stat() (os.FileInfo, error) {
+	return f, nil
 }
 
 // Sync (afero.File)
-func (s *File) Sync() error {
-	if s.spath.IsDir() {
-		return &fs.PathError{Op: "read", Path: s.Name(), Err: syscall.EISDIR}
+func (f *File) Sync() error {
+	if f.spath.IsDir() {
+		return &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR} // TODO: return nil or sync secret?
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	act := &File{}
-	if err := s.backend.Get(act); err != nil {
-		return err
-	}
-
-	act.data[s.key] = s.value
-
-	return s.backend.Update(act)
+	return f.backend.Update(f)
 }
 
 // Truncate (afero.File)
-func (s *File) Truncate(size int64) error {
-	if s.spath.IsDir() {
-		return &fs.PathError{Op: "read", Path: s.Name(), Err: syscall.EISDIR}
+func (f *File) Truncate(size int64) error {
+	if f.spath.IsDir() {
+		return &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR}
 	}
 
-	if int64(len(s.value)) <= size {
+	if int64(len(f.value)) <= size {
 		return nil
 	}
 
-	s.value = append([]byte{}, s.value[:size]...)
+	f.value = append([]byte{}, f.value[:size]...)
 
 	return nil
 }
 
 // WriteString (afero.File)
-func (s *File) WriteString(st string) (int, error) {
-	if s.spath.IsDir() {
-		return 0, &fs.PathError{Op: "read", Path: s.Name(), Err: syscall.EISDIR}
+func (f *File) WriteString(st string) (int, error) {
+	if f.spath.IsDir() {
+		return 0, &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR}
 	}
 
-	return bytes.NewBuffer(s.value).WriteString(st)
+	return bytes.NewBuffer(f.value).WriteString(st)
 }
 
 // Size returns length in bytes for keys (io.FileInfo)
-func (s *File) Size() int64 {
-	return s.size
+func (f *File) Size() int64 {
+	return int64(len(f.data))
 }
 
 // Mode returns file mode bits (io.FileInfo)
-func (s *File) Mode() fs.FileMode {
-	return s.mode
+func (f *File) Mode() fs.FileMode {
+	return f.mode
 }
 
 // ModTime returns file modification time (io.FileInfo)
-func (s *File) ModTime() time.Time {
-	return s.mtime
+func (f *File) ModTime() time.Time {
+	return f.mtime
 }
 
 // IsDir returns true for a secret, false for a key (io.FileInfo)
-func (s *File) IsDir() bool {
-	return s.spath.IsDir()
+func (f *File) IsDir() bool {
+	return f.spath.IsDir()
 }
 
 // Sys returns underlying data source (io.FileInfo)
 // can return nil
-func (s *File) Sys() interface{} {
-	return s
+func (f *File) Sys() interface{} {
+	return f
 }
 
-func (s *File) isEmptyDir() bool {
-	return s.spath.IsDir() && len(s.data) == 0
-}
-
-// TODO: checks, errors
-func (s *File) deleteFile(name string) error {
-	if _, ok := s.data[name]; !ok {
-		return afero.ErrFileNotFound
-	}
-
-	delete(s.data, name)
-	s.size = int64(len(s.data))
-	s.mtime = time.Now()
-
-	return nil
+func (f *File) isEmptyDir() bool {
+	return f.spath.IsDir() && len(f.data) == 0
 }
 
 // TODO: checks, errors
-func (s *File) renameFile(o, n string) {
-	s.data[n] = s.data[o]
-	delete(s.data, o)
-	s.size = int64(len(s.data))
-	s.mtime = time.Now()
+func (f *File) renameFile(o, n string) {
+	f.data[n] = f.data[o]
+	delete(f.data, o)
+	f.mtime = time.Now()
 }
