@@ -1,40 +1,30 @@
 package backend_test
 
 import (
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/marcsauter/sekretsfs/internal/backend"
-	"github.com/marcsauter/sekretsfs/internal/secret"
 	"github.com/stretchr/testify/require"
-	"github.com/tj/assert"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
+// TODO: test Delete()
+
 func TestBackend(t *testing.T) {
-	c := fake.NewSimpleClientset(&v1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "notmanaged",
-			Namespace:   "default",
-			Annotations: map[string]string{},
-		},
-	})
+	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
 
-	t.Run("load secret not managed with sekretsfs", func(t *testing.T) {
-		b := backend.New(c)
-
-		s, err := secret.New("default/notmanaged")
+	t.Run("get secret not managed with sekretsfs", func(t *testing.T) {
+		s, err := newFakeSecret("default", "notmanaged", "", []byte{})
 		require.NoError(t, err)
 
-		err = b.Load(s)
-		assert.EqualError(t, err, "not managed with sekretsfs")
+		err = b.Get(s)
+		require.ErrorIs(t, err, backend.ErrNotManaged)
 	})
 
-	t.Run("store new and load", func(t *testing.T) {
-		b := backend.New(c)
-
-		s, err := secret.New("default/secret")
+	t.Run("create get", func(t *testing.T) {
+		s, err := newFakeSecret("default", "secret", "", []byte{})
 		require.NoError(t, err)
 
 		data := map[string][]byte{
@@ -43,59 +33,141 @@ func TestBackend(t *testing.T) {
 
 		s.SetData(data)
 
-		err = b.Store(s)
-		assert.NoError(t, err)
-
-		s1, err := secret.New("default/secret")
+		err = b.Create(s)
 		require.NoError(t, err)
 
-		err = b.Load(s1)
-		assert.NoError(t, err)
+		s1, err := newFakeSecret("default", "secret", "", []byte{})
+		require.NoError(t, err)
 
-		d1 := s.Data()
-		assert.Equal(t, data, d1)
-		assert.Equal(t, 1, len(d1))
-		assert.Equal(t, []byte("value1"), d1["key1"])
+		err = b.Get(s1)
+		require.NoError(t, err)
+		require.Equal(t, data, s1.Data())
+		require.Equal(t, 1, len(s1.Data()))
+		require.Equal(t, []byte("value1"), s1.Data()["key1"])
 	})
 
-	t.Run("load change and store existing", func(t *testing.T) {
-		b := backend.New(c)
-
-		s, err := secret.New("default/secret")
+	t.Run("get update get", func(t *testing.T) {
+		s, err := newFakeSecret("default", "secret", "key2", []byte("value2"))
 		require.NoError(t, err)
 
-		err = b.Load(s)
-		assert.NoError(t, err)
-
-		s.Add("key2", []byte("value2"))
-		err = b.Store(s)
-		assert.NoError(t, err)
-
-		s1, err := secret.New("default/secret")
+		err = b.Get(s)
 		require.NoError(t, err)
 
-		err = b.Load(s1)
-		assert.NoError(t, err)
+		err = b.Update(s)
+		require.NoError(t, err)
 
-		d1 := s1.Data()
-		assert.Equal(t, 2, len(d1))
-		assert.Equal(t, []byte("value1"), d1["key1"])
-		assert.Equal(t, []byte("value2"), d1["key2"])
+		s1, err := newFakeSecret("default", "secret", "", []byte{})
+		require.NoError(t, err)
+
+		err = b.Get(s1)
+		require.NoError(t, err)
+
+		require.Equal(t, 2, len(s1.Data()))
+		require.Equal(t, []byte("value1"), s1.Data()["key1"])
+		require.Equal(t, []byte("value2"), s1.Data()["key2"])
 	})
 
-	t.Run("delete and load", func(t *testing.T) {
-		b := backend.New(c)
+	t.Run("rename", func(t *testing.T) {
+		// TODO:
+		// rename old does not exist
+		// rename new does already exist
 
-		s, err := secret.New("default/secret")
+		o, err := newFakeSecret("default", "secret-not-existing", "", []byte{})
+		require.NoError(t, err)
+
+		n, err := newFakeSecret("default", "secret-new", "", []byte{})
+		require.NoError(t, err)
+
+		err = b.Rename(o, n)
+		require.ErrorIs(t, err, syscall.ENOENT)
+
+		o, err = newFakeSecret("default", "secret", "", []byte{})
+		require.NoError(t, err)
+
+		n, err = newFakeSecret("default", "secret-existing", "", []byte{})
+		require.NoError(t, err)
+
+		err = b.Create(n)
+		require.NoError(t, err)
+
+		err = b.Rename(o, n)
+		require.ErrorIs(t, err, syscall.EEXIST)
+
+		o, err = newFakeSecret("default", "secret", "", []byte{})
+		require.NoError(t, err)
+
+		n, err = newFakeSecret("default", "secret-new", "", []byte{})
+		require.NoError(t, err)
+
+		err = b.Rename(o, n)
+		require.NoError(t, err)
+
+		err = b.Get(n)
+		require.NoError(t, err)
+
+		require.Equal(t, 2, len(n.Data()))
+		require.Equal(t, []byte("value1"), n.Data()["key1"])
+		require.Equal(t, []byte("value2"), n.Data()["key2"])
+	})
+
+	t.Run("delete get delete", func(t *testing.T) {
+		s, err := newFakeSecret("default", "secret-new", "", []byte{})
 		require.NoError(t, err)
 
 		err = b.Delete(s)
-		assert.NoError(t, err)
-
-		s1, err := secret.New("default/secret")
 		require.NoError(t, err)
 
-		err = b.Load(s1)
-		assert.EqualError(t, err, "file does not exist")
+		err = b.Get(s)
+		require.ErrorIs(t, err, syscall.ENOENT)
+
+		err = b.Delete(s)
+		require.NoError(t, err)
 	})
+}
+
+type fakeSecret struct {
+	namespace string
+	secret    string
+	key       string
+	value     []byte
+	data      map[string][]byte
+	mtime     time.Time
+}
+
+func newFakeSecret(ns, s, k string, v []byte) (backend.Secret, error) {
+	return &fakeSecret{
+		namespace: ns,
+		secret:    s,
+		key:       k,
+		value:     v,
+	}, nil
+}
+
+func (s *fakeSecret) Namespace() string {
+	return s.namespace
+}
+func (s *fakeSecret) Secret() string {
+	return s.secret
+}
+func (s *fakeSecret) Key() string {
+	return s.key
+}
+func (s *fakeSecret) Value() []byte {
+	return s.value
+}
+
+func (s *fakeSecret) Data() map[string][]byte {
+	return s.data
+}
+
+func (s *fakeSecret) SetData(data map[string][]byte) {
+	s.data = data
+}
+
+func (s *fakeSecret) SetTime(mtime time.Time) {
+	s.mtime = mtime
+}
+
+func (s *fakeSecret) Delete() bool {
+	return false
 }
