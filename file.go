@@ -398,10 +398,3 @@ func (f *File) Sys() interface{} {
 func (f *File) isEmptyDir() bool {
 	return f.spath.IsDir() && len(f.data) == 0
 }
-
-// TODO: checks, errors
-func (f *File) renameFile(o, n string) {
-	f.data[n] = f.data[o]
-	delete(f.data, o)
-	f.mtime = time.Now()
-}

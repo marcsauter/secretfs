@@ -80,7 +80,7 @@ func testFs(t *testing.T) afero.Fs {
 	return sfs
 }
 
-func TestsecfsSecret(t *testing.T) {
+func TestSecfsSecret(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}
@@ -118,7 +118,7 @@ func TestsecfsSecret(t *testing.T) {
 	})
 }
 
-func TestsecfsFile(t *testing.T) {
+func TestSecfsFile(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}
@@ -127,7 +127,7 @@ func TestsecfsFile(t *testing.T) {
 
 	t.Run("Key Create and Remove", func(t *testing.T) {
 		secretname := "default/testsecret3"
-		filename := path.Join(secretname, "key1")
+		filename := path.Join(secretname, "file1")
 
 		require.NoError(t, sfs.Mkdir(secretname, os.FileMode(0)))
 
@@ -150,7 +150,7 @@ func TestsecfsFile(t *testing.T) {
 
 	t.Run("Key Create and RemoveAll", func(t *testing.T) {
 		secretname := "default/testsecret4"
-		filename := path.Join(secretname, "key1")
+		filename := path.Join(secretname, "file1")
 
 		require.NoError(t, sfs.Mkdir(secretname, os.FileMode(0)))
 

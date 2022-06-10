@@ -28,6 +28,13 @@ const (
 	DefaultRequestTimeout = 5 * time.Second
 )
 
+var (
+	// ErrMoveCrossNamespace is currently not allowed
+	ErrMoveCrossNamespace = errors.New("move a secret between namespaces is not allowed")
+	// ErrMoveConvert secrets can contain files only
+	ErrMoveConvert = errors.New("convert a secret to a file is not allowed")
+)
+
 // secfs implements afero.Fs for k8s secrets
 type secfs struct {
 	backend backend.Backend
@@ -203,7 +210,7 @@ func (sfs secfs) RemoveAll(p string) error {
 	return sfs.backend.Update(s)
 }
 
-// Rename moves old to new. If new already exists and is not a directory, Rename replaces it.
+// Rename moves old to new. Rename does not replace existing secrets or files.
 func (sfs secfs) Rename(o, n string) error {
 	oldSp, err := newSecretPath(o)
 	if err != nil {
@@ -219,7 +226,7 @@ func (sfs secfs) Rename(o, n string) error {
 	// ns1/sec1 -> ns2/sec2
 	// TODO: discuss
 	if oldSp.Namespace() != newSp.Namespace() {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: errors.New("move a secret between namespaces is not allowed")}
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: ErrMoveCrossNamespace}
 	}
 
 	// rename secret
@@ -229,7 +236,7 @@ func (sfs secfs) Rename(o, n string) error {
 			return sfs.backend.Rename(oldSp, newSp)
 		}
 
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: errors.New("move a secret to an item is not allowed")}
+		return &os.LinkError{Op: "rename", Old: o, New: n, Err: ErrMoveConvert}
 	}
 
 	// move/rename key
@@ -238,15 +245,9 @@ func (sfs secfs) Rename(o, n string) error {
 		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
 	}
 
-	// sec1/key1 -> sec1/key2 // rename key
-	if oldSp.Secret() == newSp.Secret() {
-		ofi.renameFile(oldSp.Key(), newSp.Key())
-
-		return ofi.Sync()
-	}
-
 	// sec1/key1 -> sec2 // move key1 from sec1 to sec2 // sec2 must exist
-	// sec1/key1 -> sec2/key2 // move key1 as key2 to sec2 // sec2 must exist, sec2/key2 will be replaced
+	// sec1/key1 -> sec1/key2 // rename key1 to key2 - key2 will not be replaced
+	// sec1/key1 -> sec2/key2 // move key1 as key2 to sec2 // sec2 must exist, sec2/key2 will be not replaced
 	name := oldSp.Key()
 	if !newSp.IsDir() {
 		name = newSp.Key()
