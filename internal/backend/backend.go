@@ -17,15 +17,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// TODO: custom labels?
-
 const (
 	// DefaultRequestTimeout for k8s requests
 	DefaultRequestTimeout = 5 * time.Second
-	// LabelKey is the name of the secfs label
-	LabelKey = "secfs"
-	// LabelValue is the value for secfs label
-	LabelValue = ""
 	// AnnotationKey is the name of the secfs annotation
 	AnnotationKey = "secfs"
 	// AnnotationValue is the secfs version
@@ -49,11 +43,14 @@ type Metadata interface {
 // Secret is the interface that abstracts the Kubernetes secret
 type Secret interface {
 	Metadata
+
 	Value() []byte
+	Delete() bool // delete Key() from map
+
 	Data() map[string][]byte
 	SetData(map[string][]byte)
+
 	SetTime(time.Time)
-	Delete() bool
 }
 
 // Backend is the interface that groups the basic Create, Get, Update and Delete methods.
