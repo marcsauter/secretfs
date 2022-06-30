@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO: test Delete()
-
 func TestBackend(t *testing.T) {
 	cs := backend.NewFakeClientset()
 	b := backend.New(cs)
@@ -48,6 +46,37 @@ func TestBackend(t *testing.T) {
 
 	t.Run("get update get", func(t *testing.T) {
 		s, err := newFakeSecret("default", "secret", "key2", []byte("value2"))
+		require.NoError(t, err)
+
+		err = b.Get(s)
+		require.NoError(t, err)
+
+		err = b.Update(s)
+		require.NoError(t, err)
+
+		s1, err := newFakeSecret("default", "secret", "key3", []byte("value3"))
+		require.NoError(t, err)
+
+		err = b.Get(s1)
+		require.NoError(t, err)
+
+		err = b.Update(s1)
+		require.NoError(t, err)
+
+		s2, err := newFakeSecret("default", "secret", "", []byte{})
+		require.NoError(t, err)
+
+		err = b.Get(s2)
+		require.NoError(t, err)
+
+		require.Equal(t, 3, len(s2.Data()))
+		require.Equal(t, []byte("value1"), s2.Data()["key1"])
+		require.Equal(t, []byte("value2"), s2.Data()["key2"])
+		require.Equal(t, []byte("value3"), s2.Data()["key3"])
+	})
+
+	t.Run("get update with delete get", func(t *testing.T) {
+		s, err := newFakeSecretDeleteKey("default", "secret", "key3")
 		require.NoError(t, err)
 
 		err = b.Get(s)
@@ -128,10 +157,14 @@ func TestBackend(t *testing.T) {
 type fakeSecret struct {
 	namespace string
 	secret    string
-	key       string
-	value     []byte
-	data      map[string][]byte
-	mtime     time.Time
+
+	key   string
+	value []byte
+	data  map[string][]byte
+
+	delete bool
+
+	mtime time.Time
 }
 
 func newFakeSecret(ns, s, k string, v []byte) (backend.Secret, error) {
@@ -140,6 +173,15 @@ func newFakeSecret(ns, s, k string, v []byte) (backend.Secret, error) {
 		secret:    s,
 		key:       k,
 		value:     v,
+	}, nil
+}
+
+func newFakeSecretDeleteKey(ns, s, k string) (backend.Secret, error) {
+	return &fakeSecret{
+		namespace: ns,
+		secret:    s,
+		key:       k,
+		delete:    true,
 	}, nil
 }
 
@@ -169,5 +211,5 @@ func (s *fakeSecret) SetTime(mtime time.Time) {
 }
 
 func (s *fakeSecret) Delete() bool {
-	return false
+	return s.delete
 }

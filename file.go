@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/afero"
 )
 
-// File is the corev1.File without k8s specific data
-// TODO: locking - keep cascading locking mind
+// File is the corev1.Secret without k8s specific data
+// TODO: locking - keep cascading locking in mind
 type File struct {
 	name  string // absolute name namespace/secret[/key]
 	spath *secretPath
@@ -119,44 +119,44 @@ func FileCreate(b backend.Backend, name string) (*File, error) {
 	return f, nil
 }
 
-var _ backend.Secret = (*File)(nil)
+var _ backend.Secret = (*File)(nil) // backend.Secret includes backend.Metadata
 
-// Namespace returns the namespace name
+// Namespace returns the namespace name (backend.Metadata)
 func (f *File) Namespace() string {
 	return f.spath.Namespace()
 }
 
-// Secret returns the name of the secret
+// Secret returns the name of the secret (backend.Metadata)
 func (f *File) Secret() string {
 	return f.spath.Secret()
 }
 
-// Key returns the file name
+// Key returns the file name (backend.Metadata)
 func (f *File) Key() string {
 	return f.key
 }
 
-// Delete key
-func (f *File) Delete() bool {
-	return f.delete
-}
-
-// Value returns the file content
+// Value returns the file content (backend.Secret)
 func (f *File) Value() []byte {
 	return f.value
 }
 
-// Data returns the underlying secret data map
-func (f *File) Data() map[string][]byte {
-	return f.data
+// Delete key (backend.Secret)
+func (f *File) Delete() bool {
+	return f.delete
 }
 
-// SetData sets the secret data map
+// SetData sets the secret data map (backend.Secret)
 func (f *File) SetData(data map[string][]byte) {
 	f.data = data
 }
 
-// SetTime sets the secret mtime
+// Data returns the underlying secret data map (backend.Secret)
+func (f *File) Data() map[string][]byte {
+	return f.data
+}
+
+// SetTime sets the secret mtime (backend.Secret)
 func (f *File) SetTime(mtime time.Time) {
 	f.mtime = mtime
 }

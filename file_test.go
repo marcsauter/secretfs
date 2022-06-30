@@ -4,10 +4,12 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"syscall"
 	"testing"
 
 	"github.com/marcsauter/secfs"
 	"github.com/marcsauter/secfs/internal/backend"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,6 +32,12 @@ func TestFileInterfaces(t *testing.T) {
 
 	b := backend.New(cs)
 
+	t.Run("FileCreate on secret", func(t *testing.T) {
+		f, err := secfs.FileCreate(b, secretname)
+		require.ErrorIs(t, err, syscall.EISDIR)
+		require.Nil(t, f)
+	})
+
 	t.Run("FileCreate", func(t *testing.T) {
 		f, err := secfs.FileCreate(b, filename)
 		require.NoError(t, err)
@@ -49,6 +57,7 @@ func TestFileInterfaces(t *testing.T) {
 		require.Equal(t, f, f.Sys())
 
 		require.NoError(t, f.Close())
+		require.Error(t, f.Close(), afero.ErrFileClosed)
 	})
 
 	t.Run("Open file", func(t *testing.T) {
