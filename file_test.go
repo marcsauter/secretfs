@@ -222,6 +222,16 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		n, err = f.ReadAt([]byte{}, 10)
 		require.Zero(t, n)
 		require.ErrorIs(t, err, io.EOF)
+
+		require.NoError(t, f.Close())
+
+		n, err = f.Read([]byte{})
+		require.Zero(t, n)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
+
+		n, err = f.ReadAt([]byte{}, 10)
+		require.Zero(t, n)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
 	t.Run("Seek", func(t *testing.T) {
@@ -232,6 +242,12 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		n, err := f.Seek(10, io.SeekStart)
 		require.Equal(t, int64(10), n)
 		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		n, err = f.Seek(10, io.SeekStart)
+		require.Equal(t, int64(0), n)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
 	t.Run("Write", func(t *testing.T) {
@@ -246,6 +262,17 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		n, err = f.WriteAt([]byte{}, 10)
 		require.Zero(t, n)
 		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		n, err = f.Write([]byte{})
+		require.Zero(t, n)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
+
+		// TODO: check if complete
+		n, err = f.WriteAt([]byte{}, 10)
+		require.Zero(t, n)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
 	t.Run("Sync", func(t *testing.T) {
@@ -255,6 +282,11 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 
 		err = f.Sync()
 		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		err = f.Sync()
+		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
 	t.Run("Truncate", func(t *testing.T) {
@@ -264,6 +296,13 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 
 		err = f.Truncate(10)
 		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		// TODO: add case
+
+		err = f.Truncate(10)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
 	t.Run("WriteString", func(t *testing.T) {
@@ -274,6 +313,11 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		n, err := f.WriteString("")
 		require.Zero(t, n)
 		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+		n, err = f.WriteString("")
+		require.Zero(t, n)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 }
 
@@ -331,7 +375,6 @@ func TestReaddir(t *testing.T) {
 		for i := 0; i < count; i++ {
 			require.Equal(t, n[i], fmt.Sprintf("%s%d", key, i))
 		}
-
 	})
 
 	t.Run("Readnames not dir", func(t *testing.T) {

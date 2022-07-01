@@ -6,6 +6,7 @@ import (
 	"path"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/marcsauter/secfs"
 	"github.com/marcsauter/secfs/internal/backend"
@@ -18,7 +19,20 @@ func TestFSName(t *testing.T) {
 	sfs := secfs.New(nil)
 	require.NotNil(t, sfs)
 
-	assert.Equal(t, "secfs", sfs.Name())
+	t.Run("Name", func(t *testing.T) {
+		assert.Equal(t, "secfs", sfs.Name())
+	})
+
+	t.Run("Unimplemented", func(t *testing.T) {
+		namespace := "default"
+		secret := "testsecret"
+
+		secretname := path.Join(namespace, secret)
+
+		require.ErrorIs(t, sfs.Chmod(secretname, 0o0777), syscall.EROFS)
+		require.ErrorIs(t, sfs.Chown(secretname, 0, 0), syscall.EROFS)
+		require.ErrorIs(t, sfs.Chtimes(secretname, time.Now(), time.Now()), syscall.EROFS)
+	})
 }
 
 func TestCreateOpen(t *testing.T) {

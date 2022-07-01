@@ -339,6 +339,10 @@ func (f *File) Sync() error {
 		return &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR} // TODO: return nil or sync secret?
 	}
 
+	if f.closed {
+		return afero.ErrFileClosed
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -349,6 +353,10 @@ func (f *File) Sync() error {
 func (f *File) Truncate(size int64) error {
 	if f.spath.IsDir() {
 		return &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR}
+	}
+
+	if f.closed {
+		return afero.ErrFileClosed
 	}
 
 	if int64(len(f.value)) <= size {
@@ -364,6 +372,10 @@ func (f *File) Truncate(size int64) error {
 func (f *File) WriteString(st string) (int, error) {
 	if f.spath.IsDir() {
 		return 0, &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR}
+	}
+
+	if f.closed {
+		return 0, afero.ErrFileClosed
 	}
 
 	return bytes.NewBuffer(f.value).WriteString(st)
