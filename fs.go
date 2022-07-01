@@ -7,7 +7,6 @@ package secfs
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path"
 	"syscall"
@@ -122,7 +121,7 @@ func (sfs secfs) Open(name string) (afero.File, error) {
 
 // OpenFile opens a file using the given flags and the given mode.
 // OpenFile is the generalized open call; most users will use Open or Create instead. It opens the named file with specified flag (O_RDONLY etc.). If the file does not exist, and the O_CREATE flag is passed, it is created with mode perm (before umask). If successful, methods on the returned File can be used for I/O. If there is an error, it will be of type *PathError.
-/*  TODO: handle
+/*
 perm &= chmodBits
 chmod := false
 file, err := m.openWrite(name)
@@ -160,7 +159,7 @@ return file, nil
 */
 
 func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	return nil, fmt.Errorf("not yet implemented") //TODO: implement/test
+	return sfs.Open(name) //TODO: implement/test
 }
 
 // Remove removes an empty secret or a key identified by name.

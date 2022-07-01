@@ -81,6 +81,12 @@ func TestCreateOpen(t *testing.T) {
 		// require.Equal(t, f, f.Sys())
 	})
 
+	t.Run("OpenFile secret", func(t *testing.T) {
+		f, err := sfs.OpenFile(secretname, 0, 0o0000)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+	})
+
 	t.Run("Create file", func(t *testing.T) {
 		f, err := sfs.Open(filename)
 		require.ErrorIs(t, err, syscall.ENOENT)
@@ -117,6 +123,12 @@ func TestCreateOpen(t *testing.T) {
 		require.False(t, st.ModTime().IsZero())
 		require.False(t, st.IsDir())
 		// require.Equal(t, st, st.Sys())
+	})
+
+	t.Run("OpenFile file", func(t *testing.T) {
+		f, err := sfs.OpenFile(filename, 0, 0o0000)
+		require.NoError(t, err)
+		require.NotNil(t, f)
 	})
 }
 

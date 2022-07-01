@@ -16,8 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO: add afero.File tests
-
 func TestCreateOpenClose(t *testing.T) {
 	namespace := "default"
 	secret := "testsecret1"
@@ -315,6 +313,7 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NoError(t, f.Close())
+
 		n, err = f.WriteString("")
 		require.Zero(t, n)
 		require.ErrorIs(t, err, afero.ErrFileClosed)
