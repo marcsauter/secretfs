@@ -1,9 +1,12 @@
 package secfs_test
 
 import (
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
+	"sort"
 	"syscall"
 	"testing"
 
@@ -15,10 +18,10 @@ import (
 
 // TODO: add afero.File tests
 
-func TestFileInterfaces(t *testing.T) {
+func TestCreateOpenClose(t *testing.T) {
 	namespace := "default"
-	secret := "testsecret"
-	key := "testfile"
+	secret := "testsecret1"
+	key := "testfile1"
 
 	filename := path.Join(namespace, secret, key)
 	secretname := path.Join(namespace, secret)
@@ -38,7 +41,7 @@ func TestFileInterfaces(t *testing.T) {
 		require.Nil(t, f)
 	})
 
-	t.Run("FileCreate", func(t *testing.T) {
+	t.Run("FileCreate on file", func(t *testing.T) {
 		f, err := secfs.FileCreate(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -57,7 +60,7 @@ func TestFileInterfaces(t *testing.T) {
 		require.Equal(t, f, f.Sys())
 
 		require.NoError(t, f.Close())
-		require.Error(t, f.Close(), afero.ErrFileClosed)
+		require.ErrorIs(t, f.Close(), afero.ErrFileClosed)
 	})
 
 	t.Run("Open file", func(t *testing.T) {
@@ -77,6 +80,9 @@ func TestFileInterfaces(t *testing.T) {
 		require.False(t, f.ModTime().IsZero())
 		require.False(t, f.IsDir())
 		require.Equal(t, f, f.Sys())
+
+		require.NoError(t, f.Close())
+		require.ErrorIs(t, f.Close(), afero.ErrFileClosed)
 	})
 
 	t.Run("Open secret", func(t *testing.T) {
@@ -96,141 +102,261 @@ func TestFileInterfaces(t *testing.T) {
 		require.False(t, f.ModTime().IsZero())
 		require.True(t, f.IsDir())
 		require.Equal(t, f, f.Sys())
+
+		require.ErrorIs(t, f.Close(), syscall.EISDIR)
 	})
 }
 
-/*
-func TestNewSecretKeyAndAferoFileInfoInterface(t *testing.T) {
-	s, err := secfs.FileOpen("/default/testsecret/tls.crt")
+func TestReadSeekWriteSyncTruncateSecret(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret2"
+
+	secretname := path.Join(namespace, secret)
+
+	cs := backend.NewFakeClientset()
+
+	// prepare
+	sfs := secfs.New(cs)
+	err := sfs.Mkdir(secretname, os.FileMode(0))
 	require.NoError(t, err)
-	require.NotNil(t, s)
 
-	require.Equal(t, "default", s.Namespace())
-	require.Equal(t, "testsecret", s.Secret())
+	b := backend.New(cs)
 
-	require.Equal(t, "tls.crt", s.Name())
-	require.Empty(t, s.Size())
-	require.Equal(t, os.FileMode(0), s.Mode())
-	require.False(t, s.ModTime().IsZero())
-	require.False(t, s.IsDir())
-	require.Equal(t, s, s.Sys())
-}
-
-func TestNewSecretInvalid(t *testing.T) {
-	t.Run("invalid path 1", func(t *testing.T) {
-		s, err := secret.New("/default")
-		require.Error(t, err)
-		require.Nil(t, s)
-	})
-
-	t.Run("invalid path 2", func(t *testing.T) {
-		s, err := secret.New("/default/testsecret/key/more")
-		require.Error(t, err)
-		require.Nil(t, s)
-
-	})
-}
-
-func TestSecretCRUD(t *testing.T) {
-
-	t.Run("set/get data source and size", func(t *testing.T) {
-		s, err := secret.New("/default/testsecret")
+	t.Run("Read", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
 		require.NoError(t, err)
-		require.NotNil(t, s)
+		require.NotNil(t, f)
 
-		exp := map[string][]byte{
-			"key1": nil,
-			"key2": nil,
+		n, err := f.Read([]byte{})
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EISDIR)
+
+		n, err = f.ReadAt([]byte{}, 10)
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("Seek", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.Seek(10, io.SeekStart)
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("Write", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.Write([]byte{})
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EISDIR)
+
+		n, err = f.WriteAt([]byte{}, 10)
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("Sync", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Sync()
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("Truncate", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Truncate(10)
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("WriteString", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.WriteString("")
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+}
+
+func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret2"
+	key := "testfile2"
+
+	filename := path.Join(namespace, secret, key)
+	secretname := path.Join(namespace, secret)
+
+	cs := backend.NewFakeClientset()
+
+	// prepare
+	sfs := secfs.New(cs)
+	err := sfs.Mkdir(secretname, os.FileMode(0))
+	require.NoError(t, err)
+
+	b := backend.New(cs)
+
+	f, err := secfs.FileCreate(b, filename)
+	require.NoError(t, err)
+	require.NotNil(t, f)
+
+	t.Run("Read", func(t *testing.T) {
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.Read([]byte{})
+		require.Zero(t, n)
+		require.ErrorIs(t, err, io.EOF)
+
+		n, err = f.ReadAt([]byte{}, 10)
+		require.Zero(t, n)
+		require.ErrorIs(t, err, io.EOF)
+	})
+
+	t.Run("Seek", func(t *testing.T) {
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.Seek(10, io.SeekStart)
+		require.Equal(t, int64(10), n)
+		require.NoError(t, err)
+	})
+
+	t.Run("Write", func(t *testing.T) {
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.Write([]byte{})
+		require.Zero(t, n)
+		require.NoError(t, err)
+
+		n, err = f.WriteAt([]byte{}, 10)
+		require.Zero(t, n)
+		require.NoError(t, err)
+	})
+
+	t.Run("Sync", func(t *testing.T) {
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Sync()
+		require.NoError(t, err)
+	})
+
+	t.Run("Truncate", func(t *testing.T) {
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Truncate(10)
+		require.NoError(t, err)
+	})
+
+	t.Run("WriteString", func(t *testing.T) {
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.WriteString("")
+		require.Zero(t, n)
+		require.NoError(t, err)
+	})
+}
+
+func TestReaddir(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret3"
+	key := "testfile3"
+
+	secretname := path.Join(namespace, secret)
+
+	cs := backend.NewFakeClientset()
+
+	// prepare
+	sfs := secfs.New(cs)
+	err := sfs.Mkdir(secretname, os.FileMode(0))
+	require.NoError(t, err)
+
+	b := backend.New(cs)
+
+	count := 10
+
+	for i := 0; i < count; i++ {
+		filename := path.Join(namespace, secret, fmt.Sprintf("%s%d", key, i))
+		f, err := secfs.FileCreate(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+	}
+
+	t.Run("Readdir not dir", func(t *testing.T) {
+		f, err := secfs.Open(b, path.Join(namespace, secret, key+"0"))
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		fi, err := f.Readdir(0)
+		require.ErrorIs(t, err, syscall.ENOTDIR)
+		require.Len(t, fi, 0)
+	})
+
+	t.Run("Readdir", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		fi, err := f.Readdir(count)
+		require.NoError(t, err)
+		require.Len(t, fi, count)
+
+		n := make([]string, count)
+		for i := range fi {
+			n[i] = fi[i].Name()
 		}
 
-		s.SetData(exp)
-		require.Equal(t, int64(2), s.Size())
+		sort.Strings(n)
 
-		act := s.Data()
-		require.Equal(t, exp, act)
+		for i := 0; i < count; i++ {
+			require.Equal(t, n[i], fmt.Sprintf("%s%d", key, i))
+		}
+
 	})
 
-	t.Run("update get key", func(t *testing.T) {
-		s, err := secret.New("/default/testsecret")
+	t.Run("Readnames not dir", func(t *testing.T) {
+		f, err := secfs.Open(b, path.Join(namespace, secret, key+"0"))
 		require.NoError(t, err)
-		require.NotNil(t, s)
+		require.NotNil(t, f)
 
-		s.Update("key1", []byte("value1"))
-		require.Equal(t, int64(1), s.Size())
-
-		v, ok := s.Get("key1")
-		require.True(t, ok)
-		require.Equal(t, "value1", string(v))
+		n, err := f.Readdirnames(0)
+		require.ErrorIs(t, err, syscall.ENOTDIR)
+		require.Len(t, n, 0)
 	})
 
-	t.Run("add get key", func(t *testing.T) {
-		s, err := secret.New("/default/testsecret")
+	t.Run("Readnames", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
 		require.NoError(t, err)
-		require.NotNil(t, s)
+		require.NotNil(t, f)
 
-		err = s.Add("key1", []byte("value1"))
+		n, err := f.Readdirnames(count)
 		require.NoError(t, err)
-		require.Equal(t, int64(1), s.Size())
+		require.Len(t, n, count)
 
-		v, ok := s.Get("key1")
-		require.True(t, ok)
-		require.Equal(t, "value1", string(v))
+		sort.Strings(n)
 
-		err = s.Add("key1", []byte("value1"))
-		require.Error(t, err)
-		require.Equal(t, int64(1), s.Size())
-	})
-
-	t.Run("add update get key", func(t *testing.T) {
-		s, err := secret.New("/default/testsecret")
-		require.NoError(t, err)
-		require.NotNil(t, s)
-
-		err = s.Add("key1", []byte("value1"))
-		require.NoError(t, err)
-		require.Equal(t, int64(1), s.Size())
-
-		v, ok := s.Get("key1")
-		require.True(t, ok)
-		require.Equal(t, "value1", string(v))
-
-		err = s.Add("key2", []byte("value2"))
-		require.NoError(t, err)
-		require.Equal(t, int64(2), s.Size())
-
-		v, ok = s.Get("key2")
-		require.True(t, ok)
-		require.Equal(t, "value2", string(v))
-
-		s.Update("key3", []byte("value3"))
-		require.Equal(t, int64(3), s.Size())
-
-		v, ok = s.Get("key3")
-		require.True(t, ok)
-		require.Equal(t, "value3", string(v))
-
-		err = s.Add("key3", []byte("value3"))
-		require.Error(t, err)
-		require.Equal(t, int64(3), s.Size())
-
-		s.Update("key3", []byte("value4"))
-		require.Equal(t, int64(3), s.Size())
-
-		v, ok = s.Get("key3")
-		require.True(t, ok)
-		require.Equal(t, "value4", string(v))
-
-		err = s.Delete("key3")
-		require.NoError(t, err)
-		require.Equal(t, int64(2), s.Size())
-
-		err = s.Delete("key3")
-		require.ErrorIs(t, afero.ErrFileNotFound, err)
-		require.Equal(t, int64(2), s.Size())
-
-		v, ok = s.Get("key3")
-		require.False(t, ok)
-		require.Nil(t, v)
+		for i := 0; i < count; i++ {
+			require.Equal(t, n[i], fmt.Sprintf("%s%d", key, i))
+		}
 	})
 }
-*/

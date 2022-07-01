@@ -160,7 +160,7 @@ return file, nil
 */
 
 func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	return nil, fmt.Errorf("not yet implemented")
+	return nil, fmt.Errorf("not yet implemented") //TODO: implement/test
 }
 
 // Remove removes an empty secret or a key identified by name.
