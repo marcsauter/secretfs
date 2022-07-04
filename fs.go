@@ -28,13 +28,6 @@ const (
 	DefaultRequestTimeout = 5 * time.Second
 )
 
-var (
-	// ErrMoveCrossNamespace is currently not allowed
-	ErrMoveCrossNamespace = errors.New("move a secret between namespaces is not allowed")
-	// ErrMoveConvert secrets can contain files only
-	ErrMoveConvert = errors.New("convert a secret to a file is not allowed")
-)
-
 // secfs implements afero.Fs for k8s secrets
 type secfs struct {
 	backend backend.Backend

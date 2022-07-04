@@ -1,9 +1,17 @@
 package secfs
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"syscall"
+)
+
+var (
+	// ErrMoveCrossNamespace is currently not allowed
+	ErrMoveCrossNamespace = errors.New("move a secret between namespaces is not allowed")
+	// ErrMoveConvert secrets can contain files only
+	ErrMoveConvert = errors.New("convert a secret to a file is not allowed")
 )
 
 func wrapPathError(op, name string, err error) error {
