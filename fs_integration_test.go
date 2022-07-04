@@ -2,6 +2,7 @@ package secfs_test
 
 import (
 	"context"
+	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -92,14 +93,14 @@ func TestSecfsSecret(t *testing.T) {
 
 		require.NoError(t, sfs.Mkdir(secretname, os.FileMode(0)))
 
-		require.ErrorIs(t, sfs.Mkdir(secretname, os.FileMode(0)), syscall.EEXIST)
+		require.ErrorIs(t, sfs.Mkdir(secretname, os.FileMode(0)), fs.ErrExist)
 
 		require.NoError(t, sfs.Remove(secretname))
 
-		require.ErrorIs(t, sfs.Remove(secretname), syscall.ENOENT)
+		require.ErrorIs(t, sfs.Remove(secretname), fs.ErrNotExist)
 
 		f, err := sfs.Open(secretname)
-		require.ErrorIs(t, err, syscall.ENOENT)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 		require.Nil(t, f)
 	})
 
@@ -113,7 +114,7 @@ func TestSecfsSecret(t *testing.T) {
 		require.NoError(t, sfs.RemoveAll(secretname))
 
 		f, err := sfs.Open(secretname)
-		require.ErrorIs(t, err, syscall.ENOENT)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 		require.Nil(t, f)
 	})
 }
@@ -139,12 +140,12 @@ func TestSecfsFile(t *testing.T) {
 
 		require.NoError(t, sfs.Remove(filename))
 
-		require.ErrorIs(t, sfs.Remove(filename), syscall.ENOENT)
+		require.ErrorIs(t, sfs.Remove(filename), fs.ErrNotExist)
 
 		require.NoError(t, sfs.Remove(secretname))
 
 		f, err = sfs.Open(secretname)
-		require.ErrorIs(t, err, syscall.ENOENT)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 		require.Nil(t, f)
 	})
 
@@ -161,7 +162,7 @@ func TestSecfsFile(t *testing.T) {
 		require.NoError(t, sfs.RemoveAll(secretname), "remove all")
 
 		f, err = sfs.Open(secretname)
-		require.ErrorIs(t, err, syscall.ENOENT)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 		require.Nil(t, f)
 	})
 }

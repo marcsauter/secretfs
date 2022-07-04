@@ -58,17 +58,19 @@ func newFile(name string) (*File, error) {
 }
 
 // Open open a secret or file
-// File implements afero.File and os.FileInfo
+// https://pkg.go.dev/os#Open
+// returns *File (implements afero.File and os.FileInfo)
 func Open(b backend.Backend, name string) (*File, error) {
 	f, err := newFile(name)
 	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+		return nil, wrapPathError("Open", name, err)
 	}
 
 	f.backend = b
+	f.readonly = true
 
 	if err := b.Get(f); err != nil {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+		return nil, wrapPathError("Open", name, err)
 	}
 
 	if f.IsDir() {
@@ -77,7 +79,7 @@ func Open(b backend.Backend, name string) (*File, error) {
 
 	v, ok := f.data[f.key]
 	if !ok {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: syscall.ENOENT}
+		return nil, wrapPathError("Open", name, syscall.ENOENT)
 	}
 
 	f.value = v
@@ -86,35 +88,30 @@ func Open(b backend.Backend, name string) (*File, error) {
 }
 
 // FileCreate create a new or truncated file
-// File implements afero.File and os.FileInfo
+// https://pkg.go.dev/os#Create
+// returns *File (implements afero.File and os.FileInfo)
 func FileCreate(b backend.Backend, name string) (*File, error) {
 	f, err := newFile(name)
 	if err != nil {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: err}
+		return nil, wrapPathError("Create", name, err)
 	}
 
+	f.backend = b
+	f.readonly = false
+
 	if f.IsDir() {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: syscall.EISDIR}
+		return nil, wrapPathError("Create", name, syscall.EISDIR)
 	}
 
 	if err := b.Get(f); err != nil {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: syscall.ENOENT}
+		return nil, wrapPathError("Create", name, syscall.ENOENT)
 	}
 
-	if _, ok := f.data[f.key]; ok {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: syscall.EEXIST}
-	}
-
-	// TODO: create with truncate only if o_creat
 	f.data[f.key] = make([]byte, 0)
 
 	if err := b.Update(f); err != nil {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: err}
+		return nil, wrapPathError("Create", name, err)
 	}
-
-	f.mtime = time.Now()
-	f.readonly = false
-	f.backend = b
 
 	return f, nil
 }
@@ -166,8 +163,8 @@ var _ os.FileInfo = (*File)(nil) // https://pkg.go.dev/io/fs#FileInfo
 
 // Close io.Closer
 func (f *File) Close() error {
-	if f.closed {
-		return afero.ErrFileClosed
+	if err := f.validateRO(); err != nil {
+		return err
 	}
 
 	if err := f.Sync(); err != nil {
@@ -185,12 +182,8 @@ func (f *File) Close() error {
 // Read io.Reader
 // https://pkg.go.dev/io#Reader
 func (f *File) Read(p []byte) (n int, err error) {
-	if f.spath.IsDir() {
-		return 0, syscall.EISDIR
-	}
-
-	if f.closed {
-		return 0, afero.ErrFileClosed
+	if err := f.validateRO(); err != nil {
+		return 0, err
 	}
 
 	return bytes.NewReader(f.value).Read(p)
@@ -199,12 +192,8 @@ func (f *File) Read(p []byte) (n int, err error) {
 // ReadAt io.ReaderAt
 // https://pkg.go.dev/io#ReaderAt
 func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
-	if f.spath.IsDir() {
-		return 0, syscall.EISDIR
-	}
-
-	if f.closed {
-		return 0, afero.ErrFileClosed
+	if err := f.validateRO(); err != nil {
+		return 0, err
 	}
 
 	return bytes.NewReader(f.value).Read(p)
@@ -213,12 +202,8 @@ func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
 // Seek io.Seeker
 // https://pkg.go.dev/io#Seeker
 func (f *File) Seek(offset int64, whence int) (int64, error) {
-	if f.spath.IsDir() {
-		return 0, syscall.EISDIR
-	}
-
-	if f.closed {
-		return 0, afero.ErrFileClosed
+	if err := f.validateRO(); err != nil {
+		return 0, err
 	}
 
 	return bytes.NewReader(f.value).Seek(offset, whence)
@@ -227,20 +212,15 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 // Write io.Writer
 // https://pkg.go.dev/io#Writer
 func (f *File) Write(p []byte) (n int, err error) {
-	if f.spath.IsDir() {
-		return 0, syscall.EISDIR
-	}
-
-	if f.closed {
-		return 0, afero.ErrFileClosed
+	if err := f.validateRW(); err != nil {
+		return 0, err
 	}
 
 	b := bytes.NewBuffer(f.value)
 
-	n, err = b.Write(p)
-	if err != nil {
-		return 0, err
-	}
+	// err is always nil
+	// https://pkg.go.dev/bytes#Buffer.Write
+	n, _ = b.Write(p)
 
 	f.mu.Lock()
 	f.value = b.Bytes()
@@ -253,12 +233,8 @@ func (f *File) Write(p []byte) (n int, err error) {
 // https://pkg.go.dev/io#WriterAt
 // Source: https://github.com/aws/aws-sdk-go/blob/e8afe81156c70d5bf7b6d2ed5aeeb609ea3ba3f8/aws/types.go#L183
 func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
-	if f.spath.IsDir() {
-		return 0, syscall.EISDIR
-	}
-
-	if f.closed {
-		return 0, afero.ErrFileClosed
+	if err := f.validateRW(); err != nil {
+		return 0, err
 	}
 
 	f.mu.Lock()
@@ -288,9 +264,10 @@ func (f *File) Name() string {
 }
 
 // Readdir (afero.File)
+// TODO: When return io.EOF?
 func (f *File) Readdir(count int) ([]os.FileInfo, error) {
 	if !f.spath.IsDir() {
-		return nil, &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.ENOTDIR}
+		return nil, syscall.ENOTDIR
 	}
 
 	entries := []os.FileInfo{}
@@ -335,12 +312,12 @@ func (f *File) Stat() (os.FileInfo, error) {
 
 // Sync (afero.File)
 func (f *File) Sync() error {
-	if f.spath.IsDir() {
-		return &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR} // TODO: return nil or sync secret?
+	if err := f.validateRO(); err != nil {
+		return err
 	}
 
-	if f.closed {
-		return afero.ErrFileClosed
+	if f.readonly {
+		return nil
 	}
 
 	f.mu.Lock()
@@ -351,12 +328,8 @@ func (f *File) Sync() error {
 
 // Truncate (afero.File)
 func (f *File) Truncate(size int64) error {
-	if f.spath.IsDir() {
-		return &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR}
-	}
-
-	if f.closed {
-		return afero.ErrFileClosed
+	if err := f.validateRW(); err != nil {
+		return wrapPathError("Truncate", f.name, err)
 	}
 
 	if int64(len(f.value)) <= size {
@@ -370,12 +343,8 @@ func (f *File) Truncate(size int64) error {
 
 // WriteString (afero.File)
 func (f *File) WriteString(st string) (int, error) {
-	if f.spath.IsDir() {
-		return 0, &fs.PathError{Op: "read", Path: f.Name(), Err: syscall.EISDIR}
-	}
-
-	if f.closed {
-		return 0, afero.ErrFileClosed
+	if err := f.validateRW(); err != nil {
+		return 0, err
 	}
 
 	return bytes.NewBuffer(f.value).WriteString(st)
@@ -383,7 +352,11 @@ func (f *File) WriteString(st string) (int, error) {
 
 // Size returns length in bytes for keys (io.FileInfo)
 func (f *File) Size() int64 {
-	return int64(len(f.data))
+	if f.spath.IsDir() {
+		return int64(len(f.data))
+	}
+
+	return int64(len(f.value))
 }
 
 // Mode returns file mode bits (io.FileInfo)
@@ -409,4 +382,37 @@ func (f *File) Sys() interface{} {
 
 func (f *File) isEmptyDir() bool {
 	return f.spath.IsDir() && len(f.data) == 0
+}
+
+func (f *File) validateRO() error {
+	if f.spath.IsDir() {
+		return syscall.EISDIR
+	}
+
+	if f.closed {
+		return afero.ErrFileClosed
+	}
+
+	return nil
+}
+
+func (f *File) validateRW() error {
+	if err := f.validateRO(); err != nil {
+		return err
+	}
+
+	if f.readonly {
+		/*
+			From the man page of truncate(2):
+			EINVAL or EBADF
+				The file descriptor fd is not open for writing.  POSIX
+				permits, and portable applications should handle, either
+				error for this case.  (Linux produces EINVAL.)
+
+			We use EBADF which if more consistent here.
+		*/
+		return syscall.EBADF
+	}
+
+	return nil
 }

@@ -51,7 +51,7 @@ func TestCreateOpenClose(t *testing.T) {
 
 		// interface os.FileInfo
 		require.Equal(t, key, f.Name())
-		require.Equal(t, int64(1), f.Size())
+		require.Equal(t, int64(0), f.Size())
 		require.Equal(t, fs.FileMode(0), f.Mode())
 		require.False(t, f.ModTime().IsZero())
 		require.False(t, f.IsDir())
@@ -73,7 +73,7 @@ func TestCreateOpenClose(t *testing.T) {
 
 		// interface os.FileInfo
 		require.Equal(t, key, f.Name())
-		require.Equal(t, int64(1), f.Size())
+		require.Equal(t, int64(0), f.Size())
 		require.Equal(t, fs.FileMode(0), f.Mode())
 		require.False(t, f.ModTime().IsZero())
 		require.False(t, f.IsDir())
@@ -100,7 +100,8 @@ func TestCreateOpenClose(t *testing.T) {
 		require.False(t, f.ModTime().IsZero())
 		require.True(t, f.IsDir())
 		require.Equal(t, f, f.Sys())
-
+		err = f.Close()
+		t.Log(err)
 		require.ErrorIs(t, f.Close(), syscall.EISDIR)
 	})
 }
@@ -249,11 +250,25 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 	})
 
 	t.Run("Write", func(t *testing.T) {
+		// open file read-only
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
 		n, err := f.Write([]byte{})
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EBADF)
+
+		n, err = f.WriteAt([]byte{}, 10)
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EBADF)
+
+		// open file for writing
+		f, err = secfs.FileCreate(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err = f.Write([]byte{})
 		require.Zero(t, n)
 		require.NoError(t, err)
 
@@ -288,27 +303,77 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 	})
 
 	t.Run("Truncate", func(t *testing.T) {
+		// open file read-only
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
-		err = f.Truncate(10)
+		err = f.Truncate(int64(0))
+		require.ErrorIs(t, err, syscall.EBADF)
+
+		// open file for writing
+		f, err = secfs.FileCreate(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		value := "0123456789"
+
+		n, err := f.Write([]byte(value))
+		require.Equal(t, len(value), n)
+		require.NoError(t, err)
+
+		fi, err := f.Stat()
+		require.NotNil(t, fi)
+		require.NoError(t, err)
+
+		t.Log(fi.Size())
+
+		size1 := 10
+
+		require.NoError(t, f.Truncate(int64(size1)))
+
+		t.Log(fi.Size())
+
+		buf1 := make([]byte, 20)
+
+		n1, err := f.Read(buf1)
+		require.Equal(t, size1, n1)
+		require.NoError(t, err)
+
+		size2 := 5
+
+		require.NoError(t, f.Truncate(int64(size2)))
+
+		t.Log(fi.Size())
+
+		buf2 := make([]byte, 20)
+
+		n2, err := f.Read(buf2)
+		require.Equal(t, size2, n2)
 		require.NoError(t, err)
 
 		require.NoError(t, f.Close())
-
-		// TODO: add case
 
 		err = f.Truncate(10)
 		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
 	t.Run("WriteString", func(t *testing.T) {
+		// open file read-only
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
 		n, err := f.WriteString("")
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EBADF)
+
+		// open file for writing
+		f, err = secfs.FileCreate(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err = f.WriteString("")
 		require.Zero(t, n)
 		require.NoError(t, err)
 

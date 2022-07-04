@@ -1,7 +1,7 @@
 package backend_test
 
 import (
-	"syscall"
+	"io/fs"
 	"testing"
 	"time"
 
@@ -108,7 +108,7 @@ func TestBackend(t *testing.T) {
 		require.NoError(t, err)
 
 		err = b.Rename(o, n)
-		require.ErrorIs(t, err, syscall.ENOENT)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 
 		o, err = newFakeSecret("default", "secret", "", []byte{})
 		require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestBackend(t *testing.T) {
 		require.NoError(t, err)
 
 		err = b.Rename(o, n)
-		require.ErrorIs(t, err, syscall.EEXIST)
+		require.ErrorIs(t, err, fs.ErrExist)
 
 		o, err = newFakeSecret("default", "secret", "", []byte{})
 		require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestBackend(t *testing.T) {
 		require.NoError(t, err)
 
 		err = b.Get(s)
-		require.ErrorIs(t, err, syscall.ENOENT)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 
 		err = b.Delete(s)
 		require.NoError(t, err)

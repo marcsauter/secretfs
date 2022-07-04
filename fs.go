@@ -7,6 +7,7 @@ package secfs
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"syscall"
@@ -88,24 +89,24 @@ func (sfs secfs) Create(name string) (afero.File, error) {
 func (sfs secfs) Mkdir(name string, perm os.FileMode) error {
 	s, err := newFile(name)
 	if err != nil {
-		return err
+		return wrapPathError("Mkdir", name, err)
 	}
 
 	if !s.IsDir() {
-		return syscall.ENOTDIR
+		return wrapPathError("Mkdir", name, syscall.ENOTDIR)
 	}
 
 	_, err = Open(sfs.backend, name)
 
 	if err == nil {
-		return syscall.EEXIST
+		return wrapPathError("Mkdir", name, syscall.EEXIST)
 	}
 
-	if !errors.Is(err, syscall.ENOENT) {
-		return err
+	if !errors.Is(err, fs.ErrNotExist) {
+		return wrapPathError("Mkdir", name, err)
 	}
 
-	return sfs.backend.Create(s)
+	return wrapPathError("Mkdir", name, sfs.backend.Create(s))
 }
 
 // MkdirAll calls Mkdir
@@ -114,139 +115,149 @@ func (sfs secfs) MkdirAll(p string, perm os.FileMode) error {
 }
 
 // Open opens a file, returning it or an error, if any happens.
-// Open opens the named file for reading. If successful, methods on the returned file can be used for reading; the associated file descriptor has mode O_RDONLY. If there is an error, it will be of type *PathError.
+// https://pkg.go.dev/os#Open
 func (sfs secfs) Open(name string) (afero.File, error) {
-	return Open(sfs.backend, name) // TODO: add readonly
+	return Open(sfs.backend, name)
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-// OpenFile is the generalized open call; most users will use Open or Create instead. It opens the named file with specified flag (O_RDONLY etc.). If the file does not exist, and the O_CREATE flag is passed, it is created with mode perm (before umask). If successful, methods on the returned File can be used for I/O. If there is an error, it will be of type *PathError.
-/*
-perm &= chmodBits
-chmod := false
-file, err := m.openWrite(name)
-if err == nil && (flag&os.O_EXCL > 0) {
-	return nil, &os.PathError{Op: "open", Path: name, Err: ErrFileExists}
-}
-if os.IsNotExist(err) && (flag&os.O_CREATE > 0) {
-	file, err = m.Create(name)
-	chmod = true
-}
-if err != nil {
-	return nil, err
-}
-if flag == os.O_RDONLY {
-	file = mem.NewReadOnlyFileHandle(file.(*mem.File).Data())
-}
-if flag&os.O_APPEND > 0 {
-	_, err = file.Seek(0, os.SEEK_END)
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-}
-if flag&os.O_TRUNC > 0 && flag&(os.O_RDWR|os.O_WRONLY) > 0 {
-	err = file.Truncate(0)
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-}
-if chmod {
-	return file, m.setFileMode(name, perm)
-}
-return file, nil
-*/
-
+// https://pkg.go.dev/os#OpenFile
+// perm will be ignored
 func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	return sfs.Open(name) //TODO: implement/test
+	f, err := sfs.Open(name)
+	// read-only ignores other flags
+	if err == nil && (flag&os.O_RDONLY > 0) {
+		return f, nil
+	}
+
+	// Ensure that this call creates the file: if this flag is specified in conjunction with O_CREAT, and pathname already exists, then  open() fails with the error EEXIST.
+	if err == nil && (flag&os.O_EXCL > 0) {
+		return nil, wrapPathError("Mkdir", name, syscall.EEXIST)
+	}
+
+	//
+	if os.IsNotExist(err) && (flag&os.O_CREATE > 0) {
+		f, err = sfs.Create(name)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if flag&os.O_APPEND > 0 {
+		_, err = f.Seek(0, os.SEEK_END)
+		if err != nil {
+			f.Close()
+			return nil, err
+		}
+	}
+
+	if flag&os.O_TRUNC > 0 && flag&(os.O_RDWR|os.O_WRONLY) > 0 {
+		err = f.Truncate(0)
+		if err != nil {
+			f.Close()
+			return nil, err
+		}
+	}
+
+	return f, nil
 }
 
 // Remove removes an empty secret or a key identified by name.
 func (sfs secfs) Remove(name string) error {
 	si, err := sfs.Stat(name)
 	if err != nil {
-		return err
+		return wrapPathError("Remove", name, err)
 	}
 
 	s := si.Sys().(*File)
 
 	if si.IsDir() {
 		if !s.isEmptyDir() {
-			return syscall.ENOTEMPTY
+			return wrapPathError("Remove", name, syscall.ENOTEMPTY)
 		}
 
-		return sfs.backend.Delete(s) // remove empty secret
+		// remove empty secret
+		if err := sfs.backend.Delete(s); err != nil {
+			return wrapPathError("Remove", name, err)
+		}
+
+		return nil
 	}
 
 	// remove secret key
 	s.delete = true
 
-	return sfs.backend.Update(s)
+	return wrapPathError("Remove", name, sfs.backend.Update(s))
 }
 
 // RemoveAll removes a secret or key with all it contains.
 // It does not fail if the path does not exist (return nil).
-func (sfs secfs) RemoveAll(p string) error {
-	si, err := sfs.Stat(p)
+func (sfs secfs) RemoveAll(name string) error {
+	si, err := sfs.Stat(name)
 	if errors.Is(err, afero.ErrFileNotFound) {
 		return nil
 	}
 
 	if err != nil {
-		return err
+		return wrapPathError("RemoveAll", name, err)
 	}
 
 	s := si.Sys().(*File)
 
 	if si.IsDir() {
-		return sfs.backend.Delete(s) // remove secret
+		// remove secret
+		if err := sfs.backend.Delete(s); err != nil {
+			return wrapPathError("RemoveAll", name, err)
+		}
+
+		return nil
 	}
 
 	// remove secret key
 	s.delete = true
 
-	return sfs.backend.Update(s)
+	return wrapPathError("RemoveAll", name, sfs.backend.Update(s))
 }
 
 // Rename moves old to new. Rename does not replace existing secrets or files.
 func (sfs secfs) Rename(o, n string) error {
 	oldSp, err := newSecretPath(o)
 	if err != nil {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
+		return wrapLinkError("Rename", o, n, err)
 	}
 
 	newSp, err := newSecretPath(n)
 	if err != nil {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
+		return wrapLinkError("Rename", o, n, err)
 	}
 
 	// move secret in a different namespace - currently not allowed
 	// ns1/sec1 -> ns2/sec2
 	// TODO: discuss
 	if oldSp.Namespace() != newSp.Namespace() {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: ErrMoveCrossNamespace}
+		return wrapLinkError("Rename", o, n, ErrMoveCrossNamespace)
 	}
 
 	// rename secret
 	// sec1 -> sec2
 	if oldSp.IsDir() {
 		if newSp.IsDir() {
-			return sfs.backend.Rename(oldSp, newSp)
+			return wrapLinkError("Rename", o, n, sfs.backend.Rename(oldSp, newSp))
 		}
 
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: ErrMoveConvert}
+		return wrapLinkError("Rename", o, n, ErrMoveConvert)
 	}
 
 	// move/rename key
 	ofi, err := Open(sfs.backend, o)
 	if err != nil {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
+		return wrapLinkError("Rename", o, n, err)
 	}
 
 	// sec1/key1 -> sec2 // move key1 from sec1 to sec2 // sec2 must exist
-	// sec1/key1 -> sec1/key2 // rename key1 to key2 - key2 will not be replaced
-	// sec1/key1 -> sec2/key2 // move key1 as key2 to sec2 // sec2 must exist, sec2/key2 will be not replaced
+	// sec1/key1 -> sec1/key2 // rename key1 to key2 - key2 will be replaced
+	// sec1/key1 -> sec2/key2 // move key1 as key2 to sec2 // sec2 must exist, sec2/key2 will be replaced
 	name := oldSp.Key()
 	if !newSp.IsDir() {
 		name = newSp.Key()
@@ -255,19 +266,18 @@ func (sfs secfs) Rename(o, n string) error {
 	// create new item
 	nfi, err := FileCreate(sfs.backend, path.Join(newSp.Namespace(), newSp.Secret(), name))
 	if err != nil {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
+		return wrapLinkError("Rename", o, n, err)
 	}
 
 	nfi.value = ofi.value
 
-	if err := nfi.Sync(); err != nil {
-		return &os.LinkError{Op: "rename", Old: o, New: n, Err: err}
+	if err := nfi.Close(); err != nil {
+		return wrapLinkError("Rename", o, n, err)
 	}
 
-	// delete old item
 	ofi.delete = true
 
-	return ofi.Sync()
+	return wrapLinkError("Rename", o, n, sfs.backend.Update(ofi))
 }
 
 // Stat returns a FileInfo describing the named secret/key, or an error.
@@ -276,19 +286,16 @@ func (sfs secfs) Stat(name string) (os.FileInfo, error) {
 }
 
 // Chmod changes the mode of the named file to mode.
-// NOT IMPLEMENTED
 func (sfs secfs) Chmod(name string, mode os.FileMode) error {
-	return syscall.EROFS
+	return nil
 }
 
 // Chown changes the uid and gid of the named file.
-// NOT IMPLEMENTED
 func (sfs secfs) Chown(name string, uid, gid int) error {
-	return syscall.EROFS
+	return nil
 }
 
 // Chtimes changes the access and modification times of the named file
-// NOT IMPLEMENTED
 func (sfs secfs) Chtimes(name string, atime, mtime time.Time) error {
-	return syscall.EROFS
+	return nil
 }

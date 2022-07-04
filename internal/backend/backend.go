@@ -3,7 +3,6 @@ package backend
 
 import (
 	"errors"
-	"os"
 	"sync"
 	"syscall"
 	"time"
@@ -190,21 +189,21 @@ func (b *backend) Rename(o, n Metadata) error {
 	s, err := b.get(o)
 	// source not found
 	if apierr.IsNotFound(err) {
-		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: syscall.ENOENT}
+		return syscall.ENOENT
 	}
 	// backend error
 	if err != nil {
-		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
+		return err
 	}
 
 	_, err = b.get(n)
 	// target already exists
 	if err == nil {
-		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: syscall.EEXIST}
+		return syscall.EEXIST
 	}
 	// backend error
 	if !apierr.IsNotFound(err) {
-		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
+		return err
 	}
 
 	// rename
@@ -216,12 +215,12 @@ func (b *backend) Rename(o, n Metadata) error {
 
 	// create new secret
 	if _, err := b.c.CoreV1().Secrets(n.Namespace()).Create(ctx, s, metav1.CreateOptions{}); err != nil {
-		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
+		return err
 	}
 
 	// delete old secret
 	if err := b.c.CoreV1().Secrets(o.Namespace()).Delete(ctx, o.Secret(), metav1.DeleteOptions{}); err != nil {
-		return &os.LinkError{Op: "rename", Old: o.Secret(), New: n.Secret(), Err: err}
+		return err
 	}
 
 	return nil
