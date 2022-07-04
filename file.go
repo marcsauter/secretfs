@@ -222,8 +222,13 @@ func (f *File) Write(p []byte) (n int, err error) {
 	// https://pkg.go.dev/bytes#Buffer.Write
 	n, _ = b.Write(p)
 
+	// b.Bytes() has b.Cap() > b.Len()
+	// so we need to create the fitting byte slice and copy the content of the buffer
+	v := make([]byte, b.Len())
+	copy(v, b.Bytes())
+
 	f.mu.Lock()
-	f.value = b.Bytes()
+	f.value = v
 	f.mu.Unlock()
 
 	return n, nil

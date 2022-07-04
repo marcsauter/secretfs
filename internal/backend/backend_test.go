@@ -97,7 +97,7 @@ func TestBackend(t *testing.T) {
 	})
 
 	t.Run("rename", func(t *testing.T) {
-		// TODO:
+		// TODO: test
 		// rename old does not exist
 		// rename new does already exist
 

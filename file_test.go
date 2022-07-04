@@ -268,12 +268,17 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
-		n, err = f.Write([]byte{})
-		require.Zero(t, n)
+		value := "0123456789"
+		size := len(value)
+
+		n, err = f.Write([]byte(value))
+		require.Equal(t, size, n)
 		require.NoError(t, err)
 
-		n, err = f.WriteAt([]byte{}, 10)
-		require.Zero(t, n)
+		offset := 5
+
+		n, err = f.WriteAt([]byte(value), int64(offset))
+		require.Equal(t, size, n)
 		require.NoError(t, err)
 
 		require.NoError(t, f.Close())
@@ -282,13 +287,28 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		require.Zero(t, n)
 		require.ErrorIs(t, err, afero.ErrFileClosed)
 
-		// TODO: check if complete
-		n, err = f.WriteAt([]byte{}, 10)
+		n, err = f.WriteAt([]byte{}, int64(offset))
 		require.Zero(t, n)
 		require.ErrorIs(t, err, afero.ErrFileClosed)
+
+		f, err = secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		sizeR := size + offset
+
+		buf := make([]byte, 20)
+
+		nR, err := f.Read(buf)
+		require.Equal(t, sizeR, nR)
+		require.NoError(t, err)
+		t.Log(">>>", f.Size())
+		require.Equal(t, []byte("012340123456789"), buf[:sizeR])
+		require.Equal(t, []byte("012340123456789"), f.Value())
 	})
 
 	t.Run("Sync", func(t *testing.T) {
+		// open file read-only
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -326,13 +346,9 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		require.NotNil(t, fi)
 		require.NoError(t, err)
 
-		t.Log(fi.Size())
-
 		size1 := 10
 
 		require.NoError(t, f.Truncate(int64(size1)))
-
-		t.Log(fi.Size())
 
 		buf1 := make([]byte, 20)
 
@@ -343,8 +359,6 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		size2 := 5
 
 		require.NoError(t, f.Truncate(int64(size2)))
-
-		t.Log(fi.Size())
 
 		buf2 := make([]byte, 20)
 
