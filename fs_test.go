@@ -1,6 +1,7 @@
 package secfs_test
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -35,7 +36,7 @@ func TestFSName(t *testing.T) {
 	})
 }
 
-func TestCreateOpen(t *testing.T) {
+func TestFSCreate(t *testing.T) {
 	namespace := "default"
 	secret := "testsecret"
 	key := "testfile"
@@ -64,29 +65,6 @@ func TestCreateOpen(t *testing.T) {
 		require.ErrorIs(t, err, afero.ErrFileExists)
 	})
 
-	t.Run("Open secret", func(t *testing.T) {
-		f, err := sfs.Open(secretname)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		// interface os.FileInfo
-		st, err := f.Stat()
-		require.NoError(t, err)
-
-		require.Equal(t, secret, f.Name())
-		require.Equal(t, int64(0), st.Size())
-		require.Equal(t, fs.ModeDir, st.Mode())
-		require.False(t, st.ModTime().IsZero())
-		require.True(t, st.IsDir())
-		// require.Equal(t, f, f.Sys())
-	})
-
-	t.Run("OpenFile secret", func(t *testing.T) {
-		f, err := sfs.OpenFile(secretname, 0, 0o0000)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-	})
-
 	t.Run("Create file", func(t *testing.T) {
 		f, err := sfs.Open(filename)
 		require.ErrorIs(t, err, fs.ErrNotExist)
@@ -107,6 +85,42 @@ func TestCreateOpen(t *testing.T) {
 		require.False(t, st.IsDir())
 		// require.Equal(t, st, st.Sys())
 	})
+}
+
+func TestFSOpen(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret"
+	key := "testfile"
+
+	secretname := path.Join(namespace, secret)
+	filename := path.Join(namespace, secret, key)
+
+	sfs := secfs.New(backend.NewFakeClientset())
+	require.NotNil(t, sfs)
+
+	err := sfs.Mkdir(secretname, os.FileMode(0))
+	require.NoError(t, err)
+
+	f, err := sfs.Create(filename)
+	require.NoError(t, err)
+	require.NotNil(t, f)
+
+	t.Run("Open secret", func(t *testing.T) {
+		f, err := sfs.Open(secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		// interface os.FileInfo
+		st, err := f.Stat()
+		require.NoError(t, err)
+
+		require.Equal(t, secret, f.Name())
+		require.Equal(t, int64(1), st.Size())
+		require.Equal(t, fs.ModeDir, st.Mode())
+		require.False(t, st.ModTime().IsZero())
+		require.True(t, st.IsDir())
+		// require.Equal(t, f, f.Sys())
+	})
 
 	t.Run("Open file", func(t *testing.T) {
 		f, err := sfs.Open(filename)
@@ -124,15 +138,135 @@ func TestCreateOpen(t *testing.T) {
 		require.False(t, st.IsDir())
 		// require.Equal(t, st, st.Sys())
 	})
+}
+func TestFSOpenFile(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret"
+	key := "testfile"
 
-	t.Run("OpenFile file", func(t *testing.T) {
-		f, err := sfs.OpenFile(filename, 0, 0o0000)
+	secretname := path.Join(namespace, secret)
+	filename := path.Join(namespace, secret, key)
+
+	sfs := secfs.New(backend.NewFakeClientset())
+	require.NotNil(t, sfs)
+
+	err := sfs.Mkdir(secretname, os.FileMode(0))
+	require.NoError(t, err)
+
+	f, err := sfs.Create(filename)
+	require.NoError(t, err)
+	require.NotNil(t, f)
+
+	t.Run("OpenFile secret", func(t *testing.T) {
+		f, err := sfs.OpenFile(secretname, os.O_RDWR, 0o0777)
 		require.NoError(t, err)
 		require.NotNil(t, f)
+
+		n, err := f.Write([]byte{})
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("OpenFile file", func(t *testing.T) {
+		const (
+			value1 = "0123456789"
+			value2 = "ABCDE"
+		)
+
+		// open file read-only
+		f, err := sfs.OpenFile(filename, os.O_RDONLY, 0o0000)
+		require.NotNil(t, f)
+		require.NoError(t, err)
+
+		n, err := f.Write([]byte(value1))
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EBADF)
+
+		require.NoError(t, f.Close())
+
+		// open existing file with O_CREATE and O_EXCL
+		f, err = sfs.OpenFile(filename, os.O_CREATE|os.O_EXCL, 0o0644)
+		require.Nil(t, f)
+		require.ErrorIs(t, err, fs.ErrExist)
+
+		// new filename
+		filename1 := path.Join(namespace, secret, fmt.Sprintf("%s1", key))
+
+		// open not existing file with O_CREATE and write data
+		f, err = sfs.OpenFile(filename1, os.O_CREATE, 0o0644)
+		require.NotNil(t, f)
+		require.NoError(t, err)
+
+		n, err = f.Write([]byte(value1))
+		require.Equal(t, len(value1), n)
+		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		// open existing file with O_APPEND and write data
+		f, err = sfs.OpenFile(filename1, os.O_APPEND, 0o0644)
+
+		n, err = f.Write([]byte(value1))
+		require.Equal(t, len(value1), n)
+		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		// read and check the written data
+		f, err = sfs.Open(filename1)
+
+		buf1 := make([]byte, 25)
+
+		n, err = f.Read(buf1)
+		require.Equal(t, 2*len(value1), n)
+		require.NoError(t, err)
+		require.Equal(t, value1+value1, string(buf1[:n]))
+
+		require.NoError(t, f.Close())
+
+		// open existing file with O_TRUNC and either O_RDWR or O_WRONLY and write data
+		f, err = sfs.OpenFile(filename1, os.O_TRUNC|os.O_RDWR, 0o0644)
+
+		n, err = f.Write([]byte(value1))
+		require.Equal(t, len(value1), n)
+		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		// read and check the written data
+		f, err = sfs.Open(filename1)
+
+		buf2 := make([]byte, 25)
+
+		n, err = f.Read(buf2)
+		require.Equal(t, len(value1), n)
+		require.NoError(t, err)
+		require.Equal(t, value1, string(buf2[:n]))
+
+		require.NoError(t, f.Close())
+
+		// open existing file for writing
+		f, err = sfs.OpenFile(filename1, os.O_RDWR, 0o0644)
+
+		n, err = f.Write([]byte(value2))
+		require.Equal(t, len(value2), n)
+		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		// read and check the written data
+		f, err = sfs.Open(filename1)
+
+		buf3 := make([]byte, 25)
+
+		n, err = f.Read(buf3)
+		require.Equal(t, len(value1), n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("ABCDE56789"), buf3[:len(value1)])
 	})
 }
 
-func TestRemove(t *testing.T) {
+func TestFSRemove(t *testing.T) {
 	sfs := secfs.New(backend.NewFakeClientset())
 	require.NotNil(t, sfs)
 
@@ -203,7 +337,7 @@ func TestRemove(t *testing.T) {
 	})
 }
 
-func TestRename(t *testing.T) {
+func TestFSRename(t *testing.T) {
 	sfs := secfs.New(backend.NewFakeClientset())
 	require.NotNil(t, sfs)
 

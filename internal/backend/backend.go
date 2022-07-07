@@ -3,6 +3,8 @@ package backend
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -91,7 +93,7 @@ func New(c kubernetes.Interface, opts ...Option) Backend {
 func (b *backend) Create(s Secret) error {
 	ks := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   s.Secret(),
+			Name:   b.internalName(s.Secret()),
 			Labels: b.labels,
 			Annotations: map[string]string{
 				AnnotationKey: AnnotationValue,
@@ -174,7 +176,7 @@ func (b *backend) Delete(s Secret) error {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	if err := b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, s.Secret(), metav1.DeleteOptions{}); err != nil {
+	if err := b.c.CoreV1().Secrets(s.Namespace()).Delete(ctx, b.internalName(s.Secret()), metav1.DeleteOptions{}); err != nil {
 		return err
 	}
 
@@ -207,7 +209,7 @@ func (b *backend) Rename(o, n Metadata) error {
 	}
 
 	// rename
-	s.Name = n.Secret()
+	s.Name = b.internalName(n.Secret())
 	setCurrentTime(s)
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
@@ -219,7 +221,7 @@ func (b *backend) Rename(o, n Metadata) error {
 	}
 
 	// delete old secret
-	if err := b.c.CoreV1().Secrets(o.Namespace()).Delete(ctx, o.Secret(), metav1.DeleteOptions{}); err != nil {
+	if err := b.c.CoreV1().Secrets(o.Namespace()).Delete(ctx, b.internalName(o.Secret()), metav1.DeleteOptions{}); err != nil {
 		return err
 	}
 
@@ -230,7 +232,7 @@ func (b *backend) get(s Metadata) (*corev1.Secret, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	ks, err := b.c.CoreV1().Secrets(s.Namespace()).Get(ctx, s.Secret(), metav1.GetOptions{})
+	ks, err := b.c.CoreV1().Secrets(s.Namespace()).Get(ctx, b.internalName(s.Secret()), metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +249,19 @@ func (b *backend) get(s Metadata) (*corev1.Secret, error) {
 }
 
 // internal
+
+// internalName is the name of the secret in the backend
+func (b *backend) internalName(name string) string {
+	return fmt.Sprintf("%s%s%s", b.prefix, name, b.suffix)
+}
+
+// externalName is the name of the secret used in path
+//nolint:unused // logical opposite to internalName
+func (b *backend) externalName(name string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(name, b.prefix), b.suffix)
+}
+
+// helpers
 
 func setCurrentTime(s *corev1.Secret) {
 	s.Annotations[ModTimeKey] = time.Now().Format(time.RFC3339)

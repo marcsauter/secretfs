@@ -16,22 +16,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateOpenClose(t *testing.T) {
+func TestFileCreate(t *testing.T) {
 	namespace := "default"
-	secret := "testsecret1"
-	key := "testfile1"
+	secret := "testsecret"
+	key := "testfile"
 
 	filename := path.Join(namespace, secret, key)
 	secretname := path.Join(namespace, secret)
 
 	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
 
 	// prepare
 	sfs := secfs.New(cs)
+
 	err := sfs.Mkdir(secretname, os.FileMode(0))
 	require.NoError(t, err)
-
-	b := backend.New(cs)
 
 	t.Run("FileCreate on secret", func(t *testing.T) {
 		f, err := secfs.FileCreate(b, secretname)
@@ -60,6 +60,50 @@ func TestCreateOpenClose(t *testing.T) {
 		require.NoError(t, f.Close())
 		require.ErrorIs(t, f.Close(), afero.ErrFileClosed)
 	})
+}
+
+func TestFileOpen(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret"
+	key := "testfile"
+
+	filename := path.Join(namespace, secret, key)
+	secretname := path.Join(namespace, secret)
+
+	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
+
+	// prepare
+	sfs := secfs.New(cs)
+
+	err := sfs.Mkdir(secretname, os.FileMode(0))
+	require.NoError(t, err)
+
+	f, err := secfs.FileCreate(b, filename)
+	require.NoError(t, err)
+	require.NotNil(t, f)
+
+	t.Run("Open secret", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		// interface backend.Metadata
+		require.Equal(t, namespace, f.Namespace())
+		require.Equal(t, secret, f.Secret())
+		require.Empty(t, f.Key())
+
+		// interface os.FileInfo
+		require.Equal(t, secret, f.Name())
+		require.Equal(t, int64(1), f.Size())
+		require.Equal(t, fs.ModeDir, f.Mode())
+		require.False(t, f.ModTime().IsZero())
+		require.True(t, f.IsDir())
+		require.Equal(t, f, f.Sys())
+
+		require.NoError(t, f.Close())
+		require.ErrorIs(t, f.Close(), afero.ErrFileClosed)
+	})
 
 	t.Run("Open file", func(t *testing.T) {
 		f, err := secfs.Open(b, filename)
@@ -82,46 +126,30 @@ func TestCreateOpenClose(t *testing.T) {
 		require.NoError(t, f.Close())
 		require.ErrorIs(t, f.Close(), afero.ErrFileClosed)
 	})
-
-	t.Run("Open secret", func(t *testing.T) {
-		f, err := secfs.Open(b, secretname)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		// interface backend.Metadata
-		require.Equal(t, namespace, f.Namespace())
-		require.Equal(t, secret, f.Secret())
-		require.Empty(t, f.Key())
-
-		// interface os.FileInfo
-		require.Equal(t, secret, f.Name())
-		require.Equal(t, int64(1), f.Size())
-		require.Equal(t, fs.ModeDir, f.Mode())
-		require.False(t, f.ModTime().IsZero())
-		require.True(t, f.IsDir())
-		require.Equal(t, f, f.Sys())
-		err = f.Close()
-		t.Log(err)
-		require.ErrorIs(t, f.Close(), syscall.EISDIR)
-	})
 }
 
-func TestReadSeekWriteSyncTruncateSecret(t *testing.T) {
+func TestFileReadWriteSeek(t *testing.T) {
 	namespace := "default"
-	secret := "testsecret2"
+	secret := "testsecret"
+	key := "testfile"
 
+	filename := path.Join(namespace, secret, key)
 	secretname := path.Join(namespace, secret)
 
 	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
 
 	// prepare
 	sfs := secfs.New(cs)
+
 	err := sfs.Mkdir(secretname, os.FileMode(0))
 	require.NoError(t, err)
 
-	b := backend.New(cs)
+	f, err := secfs.FileCreate(b, filename)
+	require.NoError(t, err)
+	require.NotNil(t, f)
 
-	t.Run("Read", func(t *testing.T) {
+	t.Run("Read secret", func(t *testing.T) {
 		f, err := secfs.Open(b, secretname)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -133,9 +161,11 @@ func TestReadSeekWriteSyncTruncateSecret(t *testing.T) {
 		n, err = f.ReadAt([]byte{}, 10)
 		require.Zero(t, n)
 		require.ErrorIs(t, err, syscall.EISDIR)
+
+		require.NoError(t, f.Close())
 	})
 
-	t.Run("Seek", func(t *testing.T) {
+	t.Run("Seek secret", func(t *testing.T) {
 		f, err := secfs.Open(b, secretname)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -143,9 +173,11 @@ func TestReadSeekWriteSyncTruncateSecret(t *testing.T) {
 		n, err := f.Seek(10, io.SeekStart)
 		require.Zero(t, n)
 		require.ErrorIs(t, err, syscall.EISDIR)
+
+		require.NoError(t, f.Close())
 	})
 
-	t.Run("Write", func(t *testing.T) {
+	t.Run("Write secret", func(t *testing.T) {
 		f, err := secfs.Open(b, secretname)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -157,59 +189,15 @@ func TestReadSeekWriteSyncTruncateSecret(t *testing.T) {
 		n, err = f.WriteAt([]byte{}, 10)
 		require.Zero(t, n)
 		require.ErrorIs(t, err, syscall.EISDIR)
-	})
 
-	t.Run("Sync", func(t *testing.T) {
-		f, err := secfs.Open(b, secretname)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		err = f.Sync()
-		require.ErrorIs(t, err, syscall.EISDIR)
-	})
-
-	t.Run("Truncate", func(t *testing.T) {
-		f, err := secfs.Open(b, secretname)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		err = f.Truncate(10)
-		require.ErrorIs(t, err, syscall.EISDIR)
-	})
-
-	t.Run("WriteString", func(t *testing.T) {
-		f, err := secfs.Open(b, secretname)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		n, err := f.WriteString("")
+		n, err = f.WriteString("")
 		require.Zero(t, n)
 		require.ErrorIs(t, err, syscall.EISDIR)
+
+		require.NoError(t, f.Close())
 	})
-}
 
-func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
-	namespace := "default"
-	secret := "testsecret2"
-	key := "testfile2"
-
-	filename := path.Join(namespace, secret, key)
-	secretname := path.Join(namespace, secret)
-
-	cs := backend.NewFakeClientset()
-
-	// prepare
-	sfs := secfs.New(cs)
-	err := sfs.Mkdir(secretname, os.FileMode(0))
-	require.NoError(t, err)
-
-	b := backend.New(cs)
-
-	f, err := secfs.FileCreate(b, filename)
-	require.NoError(t, err)
-	require.NotNil(t, f)
-
-	t.Run("Read", func(t *testing.T) {
+	t.Run("Read file", func(t *testing.T) {
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -233,7 +221,7 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
-	t.Run("Seek", func(t *testing.T) {
+	t.Run("Seek file", func(t *testing.T) {
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -249,7 +237,11 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
-	t.Run("Write", func(t *testing.T) {
+	t.Run("Write file", func(t *testing.T) {
+		const (
+			value = "0123456789"
+		)
+
 		// open file read-only
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
@@ -268,7 +260,6 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
-		value := "0123456789"
 		size := len(value)
 
 		n, err = f.Write([]byte(value))
@@ -302,74 +293,8 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 		nR, err := f.Read(buf)
 		require.Equal(t, sizeR, nR)
 		require.NoError(t, err)
-		t.Log(">>>", f.Size())
 		require.Equal(t, []byte("012340123456789"), buf[:sizeR])
 		require.Equal(t, []byte("012340123456789"), f.Value())
-	})
-
-	t.Run("Sync", func(t *testing.T) {
-		// open file read-only
-		f, err := secfs.Open(b, filename)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		err = f.Sync()
-		require.NoError(t, err)
-
-		require.NoError(t, f.Close())
-
-		err = f.Sync()
-		require.ErrorIs(t, err, afero.ErrFileClosed)
-	})
-
-	t.Run("Truncate", func(t *testing.T) {
-		// open file read-only
-		f, err := secfs.Open(b, filename)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		err = f.Truncate(int64(0))
-		require.ErrorIs(t, err, syscall.EBADF)
-
-		// open file for writing
-		f, err = secfs.FileCreate(b, filename)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		value := "0123456789"
-
-		n, err := f.Write([]byte(value))
-		require.Equal(t, len(value), n)
-		require.NoError(t, err)
-
-		fi, err := f.Stat()
-		require.NotNil(t, fi)
-		require.NoError(t, err)
-
-		size1 := 10
-
-		require.NoError(t, f.Truncate(int64(size1)))
-
-		buf1 := make([]byte, 20)
-
-		n1, err := f.Read(buf1)
-		require.Equal(t, size1, n1)
-		require.NoError(t, err)
-
-		size2 := 5
-
-		require.NoError(t, f.Truncate(int64(size2)))
-
-		buf2 := make([]byte, 20)
-
-		n2, err := f.Read(buf2)
-		require.Equal(t, size2, n2)
-		require.NoError(t, err)
-
-		require.NoError(t, f.Close())
-
-		err = f.Truncate(10)
-		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
 	t.Run("WriteString", func(t *testing.T) {
@@ -399,7 +324,168 @@ func TestReadSeekWriteSyncTruncateFile(t *testing.T) {
 	})
 }
 
-func TestReaddir(t *testing.T) {
+func TestFileTruncate(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret"
+	key := "testfile"
+
+	filename := path.Join(namespace, secret, key)
+	secretname := path.Join(namespace, secret)
+
+	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
+
+	// prepare
+	sfs := secfs.New(cs)
+
+	err := sfs.Mkdir(secretname, os.FileMode(0))
+	require.NoError(t, err)
+
+	f, err := secfs.FileCreate(b, filename)
+	require.NoError(t, err)
+	require.NotNil(t, f)
+
+	t.Run("Truncate", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Truncate(10)
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("Truncate file", func(t *testing.T) {
+		const (
+			value = "0123456789"
+		)
+		// open file read-only
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Truncate(int64(0))
+		require.ErrorIs(t, err, syscall.EBADF)
+
+		// open file for writing
+		f, err = secfs.FileCreate(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		n, err := f.Write([]byte(value))
+		require.Equal(t, len(value), n)
+		require.NoError(t, err)
+
+		fi, err := f.Stat()
+		require.NotNil(t, fi)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(value)), fi.Size())
+
+		require.NoError(t, f.Close())
+
+		// 1st truncate
+		truncSize1 := 10
+
+		fw, err := sfs.OpenFile(filename, os.O_RDWR, 0o0600)
+		require.NoError(t, fw.Truncate(int64(truncSize1)))
+		require.NoError(t, fw.Close())
+
+		// check 1st truncate
+		f, err = secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		buf1 := make([]byte, 20)
+
+		n1, err := f.Read(buf1)
+		require.Equal(t, truncSize1, n1)
+		require.NoError(t, err)
+
+		fi, err = f.Stat()
+		require.NotNil(t, fi)
+		require.NoError(t, err)
+		require.Equal(t, int64(truncSize1), fi.Size())
+
+		require.NoError(t, f.Close())
+
+		// 2nd truncate
+		truncSize2 := 5
+
+		fw, err = sfs.OpenFile(filename, os.O_RDWR, 0o0600)
+		require.NoError(t, fw.Truncate(int64(truncSize2)))
+		require.NoError(t, fw.Close())
+
+		// check 2nd truncate
+		f, err = secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		buf2 := make([]byte, 20)
+
+		n2, err := f.Read(buf2)
+		require.Equal(t, truncSize2, n2)
+		require.NoError(t, err)
+
+		fi, err = f.Stat()
+		require.NotNil(t, fi)
+		require.NoError(t, err)
+		require.Equal(t, int64(truncSize2), fi.Size())
+
+		require.NoError(t, f.Close())
+
+		// truncate closed file
+		err = f.Truncate(10)
+		require.ErrorIs(t, err, afero.ErrFileClosed)
+	})
+}
+
+func TestFileSync(t *testing.T) {
+	namespace := "default"
+	secret := "testsecret"
+	key := "testfile"
+
+	filename := path.Join(namespace, secret, key)
+	secretname := path.Join(namespace, secret)
+
+	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
+
+	// prepare
+	sfs := secfs.New(cs)
+
+	err := sfs.Mkdir(secretname, os.FileMode(0))
+	require.NoError(t, err)
+
+	f, err := secfs.FileCreate(b, filename)
+	require.NoError(t, err)
+	require.NotNil(t, f)
+
+	t.Run("Sync secret", func(t *testing.T) {
+		f, err := secfs.Open(b, secretname)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Sync()
+		require.ErrorIs(t, err, syscall.EISDIR)
+	})
+
+	t.Run("Sync file", func(t *testing.T) {
+		// open file read-only
+		f, err := secfs.Open(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = f.Sync()
+		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		err = f.Sync()
+		require.ErrorIs(t, err, afero.ErrFileClosed)
+	})
+
+}
+
+func TestFileReaddir(t *testing.T) {
 	namespace := "default"
 	secret := "testsecret3"
 	key := "testfile3"
@@ -407,13 +493,13 @@ func TestReaddir(t *testing.T) {
 	secretname := path.Join(namespace, secret)
 
 	cs := backend.NewFakeClientset()
+	b := backend.New(cs)
 
 	// prepare
 	sfs := secfs.New(cs)
+
 	err := sfs.Mkdir(secretname, os.FileMode(0))
 	require.NoError(t, err)
-
-	b := backend.New(cs)
 
 	count := 10
 

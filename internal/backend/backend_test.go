@@ -11,7 +11,10 @@ import (
 
 func TestBackend(t *testing.T) {
 	cs := backend.NewFakeClientset()
-	b := backend.New(cs)
+	b := backend.New(cs,
+		backend.WithSecretPrefix(backend.FakePrefix),
+		backend.WithSecretSuffix(backend.FakeSuffix),
+	)
 
 	t.Run("get secret not managed with secfs", func(t *testing.T) {
 		s, err := newFakeSecret("default", "notmanaged", "", []byte{})
@@ -97,7 +100,7 @@ func TestBackend(t *testing.T) {
 	})
 
 	t.Run("rename", func(t *testing.T) {
-		// TODO: test
+		// TODO: add tests
 		// rename old does not exist
 		// rename new does already exist
 

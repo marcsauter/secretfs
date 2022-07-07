@@ -2,6 +2,7 @@ package secfs
 
 import (
 	"bytes"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 )
 
 // File is the corev1.Secret without k8s specific data
-// TODO: locking - keep cascading locking in mind
 type File struct {
 	name  string // absolute name namespace/secret[/key]
 	spath *secretPath
@@ -30,9 +30,11 @@ type File struct {
 	closed   bool
 	delete   bool
 
+	pos int64
+
 	TLS bool // TODO: corev1.SecretTypeTLS
 
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	backend backend.Backend
 }
 
@@ -54,6 +56,7 @@ func newFile(name string) (*File, error) {
 		data:     make(map[string][]byte),
 		mode:     mode,
 		readonly: true,
+		pos:      0,
 	}, nil
 }
 
@@ -163,18 +166,19 @@ var _ os.FileInfo = (*File)(nil) // https://pkg.go.dev/io/fs#FileInfo
 
 // Close io.Closer
 func (f *File) Close() error {
-	if err := f.validateRO(); err != nil {
-		return err
+	if f.closed {
+		return afero.ErrFileClosed
 	}
 
-	if err := f.Sync(); err != nil {
-		return err
+	if !f.spath.IsDir() {
+		if err := f.Sync(); err != nil {
+			return err
+		}
 	}
 
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	f.closed = true
+	f.mu.Unlock()
 
 	return nil
 }
@@ -186,7 +190,23 @@ func (f *File) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 
-	return bytes.NewReader(f.value).Read(p)
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	r := bytes.NewReader(f.value)
+
+	// seek pos
+	_, err = r.Seek(f.pos, io.SeekStart)
+	if err != nil {
+		return 0, err
+	}
+
+	n, err = r.Read(p)
+
+	// set new pos
+	f.pos += int64(n)
+
+	return n, err
 }
 
 // ReadAt io.ReaderAt
@@ -196,7 +216,10 @@ func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
 		return 0, err
 	}
 
-	return bytes.NewReader(f.value).Read(p)
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	return bytes.NewReader(f.value).ReadAt(p, off)
 }
 
 // Seek io.Seeker
@@ -206,32 +229,32 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 		return 0, err
 	}
 
-	return bytes.NewReader(f.value).Seek(offset, whence)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	r := bytes.NewReader(f.value)
+
+	n, err := r.Seek(offset, whence)
+	if err != nil {
+		return 0, err
+	}
+
+	f.pos = n
+
+	return n, err
 }
 
 // Write io.Writer
 // https://pkg.go.dev/io#Writer
 func (f *File) Write(p []byte) (n int, err error) {
-	if err := f.validateRW(); err != nil {
+	n, err = f.WriteAt(p, f.pos)
+	if err != nil {
 		return 0, err
 	}
 
-	b := bytes.NewBuffer(f.value)
+	f.pos += int64(n)
 
-	// err is always nil
-	// https://pkg.go.dev/bytes#Buffer.Write
-	n, _ = b.Write(p)
-
-	// b.Bytes() has b.Cap() > b.Len()
-	// so we need to create the fitting byte slice and copy the content of the buffer
-	v := make([]byte, b.Len())
-	copy(v, b.Bytes())
-
-	f.mu.Lock()
-	f.value = v
-	f.mu.Unlock()
-
-	return n, nil
+	return n, err
 }
 
 // WriteAt io.WriterAt
@@ -325,9 +348,6 @@ func (f *File) Sync() error {
 		return nil
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	return f.backend.Update(f)
 }
 
@@ -341,18 +361,26 @@ func (f *File) Truncate(size int64) error {
 		return nil
 	}
 
-	f.value = append([]byte{}, f.value[:size]...)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	buf := make([]byte, size)
+	copy(buf, f.value)
+	f.value = buf
 
 	return nil
 }
 
 // WriteString (afero.File)
 func (f *File) WriteString(st string) (int, error) {
-	if err := f.validateRW(); err != nil {
+	n, err := f.WriteAt([]byte(st), f.pos)
+	if err != nil {
 		return 0, err
 	}
 
-	return bytes.NewBuffer(f.value).WriteString(st)
+	f.pos += int64(n)
+
+	return n, err
 }
 
 // Size returns length in bytes for keys (io.FileInfo)
@@ -390,12 +418,12 @@ func (f *File) isEmptyDir() bool {
 }
 
 func (f *File) validateRO() error {
-	if f.spath.IsDir() {
-		return syscall.EISDIR
-	}
-
 	if f.closed {
 		return afero.ErrFileClosed
+	}
+
+	if f.spath.IsDir() {
+		return syscall.EISDIR
 	}
 
 	return nil

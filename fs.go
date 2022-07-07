@@ -115,27 +115,39 @@ func (sfs secfs) Open(name string) (afero.File, error) {
 
 // OpenFile opens a file using the given flags and the given mode.
 // https://pkg.go.dev/os#OpenFile
-// perm will be ignored
+// perm will be ignored because there is nothing comparable to filesystem permission for Kubernetes secrets
+//nolint:gocognit,gocyclo // complex function
 func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	s, err := newFile(name)
+	if err != nil {
+		return nil, wrapPathError("OpenFile", name, err)
+	}
+
 	f, err := sfs.Open(name)
-	// read-only ignores other flags
-	if err == nil && (flag&os.O_RDONLY > 0) {
+
+	// open a file read-only or open a directory
+	if err == nil && (s.IsDir() || (flag == os.O_RDONLY)) {
 		return f, nil
 	}
 
-	// Ensure that this call creates the file: if this flag is specified in conjunction with O_CREAT, and pathname already exists, then  open() fails with the error EEXIST.
-	if err == nil && (flag&os.O_EXCL > 0) {
+	// Ensure that this call creates the file:
+	// If O_EXCL is specified with O_CREAT, and pathname already exists, then  open() fails with the error EEXIST.
+	if err == nil && (flag&os.O_EXCL > 0) && (flag&os.O_CREATE > 0) {
 		return nil, wrapPathError("Mkdir", name, syscall.EEXIST)
 	}
 
-	//
+	// If pathname does not exist, create it as a regular file.
 	if os.IsNotExist(err) && (flag&os.O_CREATE > 0) {
 		f, err = sfs.Create(name)
 	}
 
+	// Handle unexpected error from Open and error from Create
 	if err != nil {
 		return nil, err
 	}
+
+	// enable read-write mode
+	f.(*File).readonly = false
 
 	if flag&os.O_APPEND > 0 {
 		_, err = f.Seek(0, os.SEEK_END)
