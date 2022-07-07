@@ -197,7 +197,7 @@ func TestFileReadWriteSeek(t *testing.T) {
 		require.NoError(t, f.Close())
 	})
 
-	t.Run("Read file", func(t *testing.T) {
+	t.Run("Read empty file", func(t *testing.T) {
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -221,7 +221,7 @@ func TestFileReadWriteSeek(t *testing.T) {
 		require.ErrorIs(t, err, afero.ErrFileClosed)
 	})
 
-	t.Run("Seek file", func(t *testing.T) {
+	t.Run("Seek empty file", func(t *testing.T) {
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -255,6 +255,54 @@ func TestFileReadWriteSeek(t *testing.T) {
 		require.Zero(t, n)
 		require.ErrorIs(t, err, syscall.EBADF)
 
+		n, err = f.WriteString("")
+		require.Zero(t, n)
+		require.ErrorIs(t, err, syscall.EBADF)
+
+		/*
+						pos=0	value=""
+
+			Write		p="0123456789"
+
+						pos=10	value="0123456789"
+
+			WriteAt		p="0123456789" offset=5
+
+						pos=10	value="012340123456789"
+
+			WriteAt		p="0123456789" offset=20
+
+						pos=10	value="012340123456789\x00\x00\x00\x00\x000123456789"
+
+			Write		p="0123456789"
+
+						pos=20	value="012340123401234567890123456789"
+
+			Seek    	offset=5	whence=io.SeekStart
+
+						pos=5	value="012340123401234567890123456789"
+
+			Write		p="_"
+
+						pos=6	value="01234_123401234567890123456789"
+
+			Seek    	offset=5	whence=io.SeekCurrent
+
+						pos=11	value="01234_123401234567890123456789"
+
+			WriteString	p="-"
+
+						pos=12	value="01234_12340-234567890123456789"
+
+			Seek		offset=-5	whence=io.SeekEnd
+
+						pos=25	value="01234_12340-234567890123456789"
+
+			WriteString	p="/"
+
+						pos=26	value="01234_12340-2345678901234/6789"
+		*/
+
 		// open file for writing
 		f, err = secfs.FileCreate(b, filename)
 		require.NoError(t, err)
@@ -265,62 +313,146 @@ func TestFileReadWriteSeek(t *testing.T) {
 		n, err = f.Write([]byte(value))
 		require.Equal(t, size, n)
 		require.NoError(t, err)
+		require.Equal(t, []byte("0123456789"), f.Value())
 
-		offset := 5
-
-		n, err = f.WriteAt([]byte(value), int64(offset))
+		n, err = f.WriteAt([]byte(value), 5)
 		require.Equal(t, size, n)
 		require.NoError(t, err)
+		require.Equal(t, []byte("012340123456789"), f.Value())
+
+		n, err = f.WriteAt([]byte(value), 20)
+		require.Equal(t, size, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte(fmt.Sprintf("012340123456789\x00\x00\x00\x00\x000123456789")), f.Value())
+
+		n, err = f.Write([]byte(value))
+		require.Equal(t, size, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("012340123401234567890123456789"), f.Value())
+
+		ns, err := f.Seek(5, io.SeekStart)
+		require.Equal(t, int64(5), ns)
+		require.NoError(t, err)
+
+		n, err = f.Write([]byte("_"))
+		require.Equal(t, 1, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("01234_123401234567890123456789"), f.Value())
+
+		ns, err = f.Seek(5, io.SeekCurrent)
+		require.Equal(t, int64(11), ns)
+		require.NoError(t, err)
+
+		n, err = f.WriteString("-")
+		require.Equal(t, 1, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("01234_12340-234567890123456789"), f.Value())
+
+		ns, err = f.Seek(-5, io.SeekEnd)
+		require.Equal(t, int64(25), ns)
+		require.NoError(t, err)
+
+		n, err = f.WriteString("/")
+		require.Equal(t, 1, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("01234_12340-2345678901234/6789"), f.Value())
 
 		require.NoError(t, f.Close())
-
-		n, err = f.Write([]byte{})
-		require.Zero(t, n)
-		require.ErrorIs(t, err, afero.ErrFileClosed)
-
-		n, err = f.WriteAt([]byte{}, int64(offset))
-		require.Zero(t, n)
-		require.ErrorIs(t, err, afero.ErrFileClosed)
-
-		f, err = secfs.Open(b, filename)
-		require.NoError(t, err)
-		require.NotNil(t, f)
-
-		sizeR := size + offset
-
-		buf := make([]byte, 20)
-
-		nR, err := f.Read(buf)
-		require.Equal(t, sizeR, nR)
-		require.NoError(t, err)
-		require.Equal(t, []byte("012340123456789"), buf[:sizeR])
-		require.Equal(t, []byte("012340123456789"), f.Value())
 	})
 
-	t.Run("WriteString", func(t *testing.T) {
+	t.Run("Read file", func(t *testing.T) {
 		// open file read-only
 		f, err := secfs.Open(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
 
-		n, err := f.WriteString("")
-		require.Zero(t, n)
-		require.ErrorIs(t, err, syscall.EBADF)
+		/*
+					pos=0	value="01234_12340-2345678901234/6789"
 
-		// open file for writing
-		f, err = secfs.FileCreate(b, filename)
+			Read	size=5
+
+					pos=5	p="01234"
+
+			ReadAt	size=5 offset=10
+
+					pos=5	p="0/234"
+
+			Read	size=5
+
+					pos=10	p="_1234"
+
+			Seek	offset=5	whence=io.SeekStart
+
+					pos=5
+
+			Read	size=1
+
+					pos=6	p="_"
+
+			Seek	offset=5	whence=io.SeekCurrent
+
+					pos=11
+
+			Read	size=1
+
+					pos=12	p="-"
+
+			Seek	offset=-5	whence=io.SeekEnd
+
+					pos=25
+
+			Read	size=1
+
+					pos=26	p="/"
+		*/
+
+		buf1 := make([]byte, 5)
+		n, err := f.Read(buf1)
+		require.Equal(t, 5, n)
 		require.NoError(t, err)
-		require.NotNil(t, f)
+		require.Equal(t, []byte("01234"), buf1)
 
-		n, err = f.WriteString("")
-		require.Zero(t, n)
+		buf2 := make([]byte, 5)
+		n, err = f.ReadAt(buf2, 10)
+		require.Equal(t, 5, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("0-234"), buf2)
+
+		buf3 := make([]byte, 5)
+		n, err = f.Read(buf3)
+		require.Equal(t, 5, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("_1234"), buf3)
+
+		ns, err := f.Seek(5, io.SeekStart)
+		require.Equal(t, int64(5), ns)
 		require.NoError(t, err)
 
-		require.NoError(t, f.Close())
+		buf4 := make([]byte, 1)
+		n, err = f.Read(buf4)
+		require.Equal(t, 1, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("_"), buf4)
 
-		n, err = f.WriteString("")
-		require.Zero(t, n)
-		require.ErrorIs(t, err, afero.ErrFileClosed)
+		ns, err = f.Seek(5, io.SeekCurrent)
+		require.Equal(t, int64(11), ns)
+		require.NoError(t, err)
+
+		buf5 := make([]byte, 1)
+		n, err = f.Read(buf5)
+		require.Equal(t, 1, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("-"), buf5)
+
+		ns, err = f.Seek(-5, io.SeekEnd)
+		require.Equal(t, int64(25), ns)
+		require.NoError(t, err)
+
+		buf6 := make([]byte, 1)
+		n, err = f.Read(buf6)
+		require.Equal(t, 1, n)
+		require.NoError(t, err)
+		require.Equal(t, []byte("/"), buf6)
 	})
 }
 

@@ -150,17 +150,13 @@ func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, 
 	f.(*File).readonly = false
 
 	if flag&os.O_APPEND > 0 {
-		_, err = f.Seek(0, os.SEEK_END)
-		if err != nil {
-			f.Close()
+		if _, err := f.Seek(0, os.SEEK_END); err != nil {
 			return nil, err
 		}
 	}
 
 	if flag&os.O_TRUNC > 0 && flag&(os.O_RDWR|os.O_WRONLY) > 0 {
-		err = f.Truncate(0)
-		if err != nil {
-			f.Close()
+		if err := f.Truncate(0); err != nil {
 			return nil, err
 		}
 	}

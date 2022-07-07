@@ -234,6 +234,11 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 
 	r := bytes.NewReader(f.value)
 
+	_, err := r.Seek(f.pos, io.SeekStart)
+	if err != nil {
+		return 0, err
+	}
+
 	n, err := r.Seek(offset, whence)
 	if err != nil {
 		return 0, err
