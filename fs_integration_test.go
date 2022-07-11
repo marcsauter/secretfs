@@ -166,3 +166,177 @@ func TestSecfsFile(t *testing.T) {
 		require.Nil(t, f)
 	})
 }
+
+func TestAferoFunctions(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.WriteFile afero.ReadFile", func(t *testing.T) {
+		secretname := "default/testsecret5"
+		filename := path.Join(secretname, "file1")
+		content := []byte("0123456789")
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		err := afero.WriteFile(sfs, filename, content, 0o0600)
+		require.NoError(t, err)
+
+		c, err := afero.ReadFile(sfs, filename)
+		require.NoError(t, err)
+		require.Equal(t, content, c)
+
+		require.NoError(t, sfs.Remove(filename))
+		require.ErrorIs(t, sfs.Remove(filename), os.ErrNotExist)
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+
+	t.Run("afero.FileContainsBytes afero.FileContainsAnyBytes", func(t *testing.T) {
+		secretname := "default/testsecret6"
+		filename := path.Join(secretname, "file1")
+		content := []byte("0123456789")
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		err := afero.WriteFile(sfs, filename, content, 0o0600)
+		require.NoError(t, err)
+
+		ok, err := afero.FileContainsBytes(sfs, filename, []byte("123"))
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		ok, err = afero.FileContainsBytes(sfs, filename, []byte("ABC"))
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		ok, err = afero.FileContainsAnyBytes(sfs, filename, [][]byte{
+			[]byte("123"),
+			[]byte("ABC"),
+		},
+		)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		ok, err = afero.FileContainsAnyBytes(sfs, filename, [][]byte{
+			[]byte("321"),
+			[]byte("CBA"),
+		},
+		)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		require.NoError(t, sfs.Remove(filename))
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+
+	t.Run("afero.DirExists afero.Exists afero.IsDir", func(t *testing.T) {
+		secretname := "default/testsecret7"
+
+		filename := path.Join(secretname, "file1")
+		content := []byte("0123456789")
+
+		ok, err := afero.Exists(sfs, secretname)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		ok, err = afero.DirExists(sfs, secretname)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		ok, err = afero.IsDir(sfs, secretname)
+		require.ErrorIs(t, err, os.ErrNotExist)
+		require.False(t, ok)
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		ok, err = afero.Exists(sfs, secretname)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		ok, err = afero.IsDir(sfs, secretname)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		ok, err = afero.DirExists(sfs, secretname)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		ok, err = afero.IsEmpty(sfs, secretname)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		ok, err = afero.Exists(sfs, filename)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		ok, err = afero.DirExists(sfs, filename)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		err = afero.WriteFile(sfs, filename, []byte{}, 0o0600)
+		require.NoError(t, err)
+
+		ok, err = afero.Exists(sfs, filename)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		ok, err = afero.DirExists(sfs, filename)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		ok, err = afero.IsDir(sfs, filename)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		ok, err = afero.IsEmpty(sfs, filename)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		err = afero.WriteFile(sfs, filename, content, 0o0600)
+		require.NoError(t, err)
+
+		ok, err = afero.IsEmpty(sfs, filename)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+
+	t.Run("afero.FileContainsBytes and afero.FileContainsAnyBytes", func(t *testing.T) {
+		secretname := "default/testsecret6"
+		basename := "file1"
+		filename := path.Join(secretname, basename)
+		content := []byte("0123456789")
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		bpfs := afero.NewBasePathFs(sfs, secretname)
+		require.NotNil(t, bpfs)
+
+		err := afero.WriteFile(bpfs, basename, content, 0o0600)
+		require.NoError(t, err)
+
+		p := afero.FullBaseFsPath(bpfs.(*afero.BasePathFs), basename)
+		require.Equal(t, filename, p)
+
+		c, err := afero.ReadFile(sfs, filename)
+		require.NoError(t, err)
+		require.Equal(t, content, c)
+
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+}
+
+/*
+TODO: tests
+func GetTempDir(fs Fs, subPath string) string
+func Glob(fs Fs, pattern string) (matches []string, err error)
+func ReadAll(r io.Reader) ([]byte, error)
+func ReadDir(fs Fs, dirname string) ([]os.FileInfo, error)
+func SafeWriteReader(fs Fs, path string, r io.Reader) (err error)
+func TempDir(fs Fs, dir, prefix string) (name string, err error)
+func Walk(fs Fs, root string, walkFn filepath.WalkFunc) error
+func WriteReader(fs Fs, path string, r io.Reader) (err error)
+*/

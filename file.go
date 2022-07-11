@@ -106,10 +106,30 @@ func FileCreate(b backend.Backend, name string) (*File, error) {
 		return nil, wrapPathError("Create", name, syscall.EISDIR)
 	}
 
-	if err := b.Get(f); err != nil {
-		return nil, wrapPathError("Create", name, syscall.ENOENT)
+	// secret must exist
+	secretName := filepath.Dir(name)
+
+	d, err := newFile(secretName)
+	if err != nil {
+		return nil, wrapPathError("Create", secretName, err)
 	}
 
+	if err := b.Get(d); err != nil {
+		return nil, wrapPathError("Create", secretName, err)
+	}
+
+	// create if file does not exist
+	if err := b.Get(f); err != nil {
+		if err != syscall.ENOENT {
+			return nil, wrapPathError("Create", name, err)
+		}
+
+		err := b.Create(f)
+
+		return f, err
+	}
+
+	// truncate if file exists
 	f.data[f.key] = make([]byte, 0)
 
 	if err := b.Update(f); err != nil {
