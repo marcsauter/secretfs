@@ -104,7 +104,12 @@ func (sfs secfs) Mkdir(name string, perm os.FileMode) error {
 
 // MkdirAll calls Mkdir
 func (sfs secfs) MkdirAll(p string, perm os.FileMode) error {
-	return sfs.Mkdir(p, perm)
+	err := sfs.Mkdir(p, perm)
+	if errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+
+	return err
 }
 
 // Open opens a file, returning it or an error, if any happens.

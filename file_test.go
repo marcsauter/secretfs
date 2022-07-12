@@ -25,21 +25,27 @@ func TestFileCreate(t *testing.T) {
 	secretname := path.Join(namespace, secret)
 
 	cs := backend.NewFakeClientset()
-	b := backend.New(cs)
+	b := backend.New(cs,
+		backend.WithSecretPrefix(backend.FakePrefix),
+		backend.WithSecretSuffix(backend.FakeSuffix),
+	)
 
 	// prepare
-	sfs := secfs.New(cs)
+	sfs := secfs.New(cs,
+		secfs.WithSecretPrefix(backend.FakePrefix),
+		secfs.WithSecretSuffix(backend.FakeSuffix),
+	)
 
 	err := sfs.Mkdir(secretname, os.FileMode(0))
 	require.NoError(t, err)
 
-	t.Run("FileCreate on secret", func(t *testing.T) {
+	t.Run("FileCreate secret", func(t *testing.T) {
 		f, err := secfs.FileCreate(b, secretname)
 		require.ErrorIs(t, err, syscall.EISDIR)
 		require.Nil(t, f)
 	})
 
-	t.Run("FileCreate on file", func(t *testing.T) {
+	t.Run("FileCreate not existing file", func(t *testing.T) {
 		f, err := secfs.FileCreate(b, filename)
 		require.NoError(t, err)
 		require.NotNil(t, f)
@@ -59,6 +65,20 @@ func TestFileCreate(t *testing.T) {
 
 		require.NoError(t, f.Close())
 		require.ErrorIs(t, f.Close(), afero.ErrFileClosed)
+	})
+
+	t.Run("FileCreate existing file", func(t *testing.T) {
+		f, err := secfs.FileCreate(b, filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+	})
+
+	t.Run("FileCreate existing not managed file", func(t *testing.T) {
+		filename := path.Join(namespace, "notmanaged", key)
+
+		f, err := secfs.FileCreate(b, filename)
+		require.ErrorIs(t, err, backend.ErrNotManaged)
+		require.Nil(t, f)
 	})
 }
 

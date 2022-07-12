@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
+	"sort"
 	"syscall"
 	"testing"
 	"time"
@@ -167,7 +169,7 @@ func TestSecfsFile(t *testing.T) {
 	})
 }
 
-func TestAferoFunctions(t *testing.T) {
+func TestAferoFunctionsReadWrite(t *testing.T) {
 	if clientset == nil {
 		t.Skip("no cluster connection available")
 	}
@@ -186,15 +188,24 @@ func TestAferoFunctions(t *testing.T) {
 
 		c, err := afero.ReadFile(sfs, filename)
 		require.NoError(t, err)
+
 		require.Equal(t, content, c)
 
 		require.NoError(t, sfs.Remove(filename))
 		require.ErrorIs(t, sfs.Remove(filename), os.ErrNotExist)
 		require.NoError(t, sfs.RemoveAll(secretname))
 	})
+}
 
-	t.Run("afero.FileContainsBytes afero.FileContainsAnyBytes", func(t *testing.T) {
-		secretname := "default/testsecret6"
+func TestAferoFunctionsContains(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.FileContainsBytes", func(t *testing.T) {
+		secretname := "default/testsecret6a"
 		filename := path.Join(secretname, "file1")
 		content := []byte("0123456789")
 
@@ -211,7 +222,20 @@ func TestAferoFunctions(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, ok)
 
-		ok, err = afero.FileContainsAnyBytes(sfs, filename, [][]byte{
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+
+	t.Run("afero.FileContainsBytes", func(t *testing.T) {
+		secretname := "default/testsecret6b"
+		filename := path.Join(secretname, "file1")
+		content := []byte("0123456789")
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		err := afero.WriteFile(sfs, filename, content, 0o0600)
+		require.NoError(t, err)
+
+		ok, err := afero.FileContainsAnyBytes(sfs, filename, [][]byte{
 			[]byte("123"),
 			[]byte("ABC"),
 		},
@@ -227,16 +251,19 @@ func TestAferoFunctions(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, ok)
 
-		require.NoError(t, sfs.Remove(filename))
 		require.NoError(t, sfs.RemoveAll(secretname))
 	})
+}
 
-	t.Run("afero.DirExists afero.Exists afero.IsDir", func(t *testing.T) {
-		secretname := "default/testsecret7"
+func TestAferoFunctionsExists(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
 
-		filename := path.Join(secretname, "file1")
-		content := []byte("0123456789")
+	sfs := testFs(t)
+	secretname := "default/testsecret7"
 
+	t.Run("afero.Exists afero.DirExists afero.IsDir all false", func(t *testing.T) {
 		ok, err := afero.Exists(sfs, secretname)
 		require.NoError(t, err)
 		require.False(t, ok)
@@ -248,14 +275,12 @@ func TestAferoFunctions(t *testing.T) {
 		ok, err = afero.IsDir(sfs, secretname)
 		require.ErrorIs(t, err, os.ErrNotExist)
 		require.False(t, ok)
+	})
 
+	t.Run("afero.Exists afero.DirExists afero.IsDir afero.IsEmpty on existing empty secret", func(t *testing.T) {
 		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
 
-		ok, err = afero.Exists(sfs, secretname)
-		require.NoError(t, err)
-		require.True(t, ok)
-
-		ok, err = afero.IsDir(sfs, secretname)
+		ok, err := afero.Exists(sfs, secretname)
 		require.NoError(t, err)
 		require.True(t, ok)
 
@@ -263,11 +288,23 @@ func TestAferoFunctions(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		ok, err = afero.IsEmpty(sfs, secretname)
+		ok, err = afero.IsDir(sfs, secretname)
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		ok, err = afero.Exists(sfs, filename)
+		ok, err = afero.IsEmpty(sfs, secretname)
+		require.NoError(t, err)
+		require.True(t, ok)
+	})
+
+	defer func() {
+		require.NoError(t, sfs.RemoveAll(secretname))
+	}()
+
+	t.Run("afero.Exists afero.DirExists afero.IsDir on not existing file", func(t *testing.T) {
+		filename := path.Join(secretname, "file1")
+
+		ok, err := afero.Exists(sfs, filename)
 		require.NoError(t, err)
 		require.False(t, ok)
 
@@ -275,10 +312,18 @@ func TestAferoFunctions(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, ok)
 
-		err = afero.WriteFile(sfs, filename, []byte{}, 0o0600)
+		ok, err = afero.IsDir(sfs, filename)
+		require.ErrorIs(t, err, fs.ErrNotExist)
+		require.False(t, ok)
+	})
+
+	t.Run("afero.Exists afero.DirExists afero.IsDir afero.IsEmpty on existing empty file", func(t *testing.T) {
+		filename := path.Join(secretname, "file1")
+
+		err := afero.WriteFile(sfs, filename, []byte{}, 0o0600)
 		require.NoError(t, err)
 
-		ok, err = afero.Exists(sfs, filename)
+		ok, err := afero.Exists(sfs, filename)
 		require.NoError(t, err)
 		require.True(t, ok)
 
@@ -293,50 +338,285 @@ func TestAferoFunctions(t *testing.T) {
 		ok, err = afero.IsEmpty(sfs, filename)
 		require.NoError(t, err)
 		require.True(t, ok)
-
-		err = afero.WriteFile(sfs, filename, content, 0o0600)
-		require.NoError(t, err)
-
-		ok, err = afero.IsEmpty(sfs, filename)
-		require.NoError(t, err)
-		require.False(t, ok)
-
-		require.NoError(t, sfs.RemoveAll(secretname))
 	})
 
-	t.Run("afero.FileContainsBytes and afero.FileContainsAnyBytes", func(t *testing.T) {
-		secretname := "default/testsecret6"
+	t.Run("afero.IsEmpty on existing non empty file", func(t *testing.T) {
+		filename := path.Join(secretname, "file1")
+		content := []byte("0123456789")
+
+		err := afero.WriteFile(sfs, filename, content, 0o0600)
+		require.NoError(t, err)
+
+		ok, err := afero.IsEmpty(sfs, filename)
+		require.NoError(t, err)
+		require.False(t, ok)
+	})
+}
+
+func TestAferoFunctionsBasePathFs(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.NewBasePathFs and afero.FullBaseFsPath", func(t *testing.T) {
+		secretname := "default/testsecret8"
 		basename := "file1"
 		filename := path.Join(secretname, basename)
 		content := []byte("0123456789")
 
 		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
 
-		bpfs := afero.NewBasePathFs(sfs, secretname)
-		require.NotNil(t, bpfs)
+		bpFs := afero.NewBasePathFs(sfs, secretname)
+		require.NotNil(t, bpFs)
 
-		err := afero.WriteFile(bpfs, basename, content, 0o0600)
+		err := afero.WriteFile(bpFs, basename, content, 0o0600)
 		require.NoError(t, err)
 
-		p := afero.FullBaseFsPath(bpfs.(*afero.BasePathFs), basename)
+		p := afero.FullBaseFsPath(bpFs.(*afero.BasePathFs), basename)
 		require.Equal(t, filename, p)
 
 		c, err := afero.ReadFile(sfs, filename)
 		require.NoError(t, err)
+
 		require.Equal(t, content, c)
 
 		require.NoError(t, sfs.RemoveAll(secretname))
 	})
 }
 
-/*
-TODO: tests
-func GetTempDir(fs Fs, subPath string) string
-func Glob(fs Fs, pattern string) (matches []string, err error)
-func ReadAll(r io.Reader) ([]byte, error)
-func ReadDir(fs Fs, dirname string) ([]os.FileInfo, error)
-func SafeWriteReader(fs Fs, path string, r io.Reader) (err error)
-func TempDir(fs Fs, dir, prefix string) (name string, err error)
-func Walk(fs Fs, root string, walkFn filepath.WalkFunc) error
-func WriteReader(fs Fs, path string, r io.Reader) (err error)
-*/
+func TestAferoFunctionsGlob(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.Glob", func(t *testing.T) {
+		secretname := "default/testsecret9"
+		secrets := []string{
+			filepath.Join(secretname, "a"),
+			filepath.Join(secretname, "b"),
+			filepath.Join(secretname, "c"),
+			filepath.Join(secretname, "d"),
+			filepath.Join(secretname, "e"),
+		}
+
+		sort.Strings(secrets)
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		for _, s := range secrets {
+			_, err := sfs.Create(s)
+			require.NoError(t, err)
+		}
+
+		result, err := afero.Glob(sfs, "default/testsecret9/*")
+		require.NoError(t, err)
+
+		sort.Strings(result)
+
+		require.Equal(t, secrets, result)
+
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+}
+
+func TestAferoFunctionsReadAll(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.ReadAll", func(t *testing.T) {
+		secretname := "default/testsecret10"
+		filename := path.Join(secretname, "file1")
+		content := []byte("0123456789")
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		err := afero.WriteFile(sfs, filename, content, 0o0600)
+		require.NoError(t, err)
+
+		f, err := sfs.Open(filename)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		c, err := afero.ReadAll(f)
+		require.NoError(t, err)
+		require.Equal(t, content, c)
+	})
+}
+
+func TestAferoFunctionsReadDir(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.ReadDir", func(t *testing.T) {
+		secretname := "default/testsecret11"
+		secrets := []string{
+			filepath.Join(secretname, "a"),
+			filepath.Join(secretname, "b"),
+			filepath.Join(secretname, "c"),
+			filepath.Join(secretname, "d"),
+			filepath.Join(secretname, "e"),
+		}
+
+		sort.Strings(secrets)
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		for _, s := range secrets {
+			_, err := sfs.Create(s)
+			require.NoError(t, err)
+		}
+
+		fi, err := afero.ReadDir(sfs, secretname)
+		require.NoError(t, err)
+
+		result := make([]string, len(fi))
+
+		for i, s := range fi {
+			result[i] = filepath.Join(secretname, s.Name())
+		}
+
+		sort.Strings(result)
+
+		require.Equal(t, secrets, result)
+
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+}
+
+func TestAferoFunctionsWriteReader(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.SafeWriteReader afero.WriteReader", func(t *testing.T) {
+		secretname := "default/testsecret12"
+		filenameR := filepath.Join(secretname, "read")
+		filenameW := filepath.Join(secretname, "write")
+		content := []byte("0123456789")
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+
+		err := afero.WriteFile(sfs, filenameR, content, 0o0600)
+		require.NoError(t, err)
+
+		// 1st
+		f, err := sfs.Open(filenameR)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = afero.WriteReader(sfs, filenameW, f)
+		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		// check
+		c, err := afero.ReadFile(sfs, filenameW)
+		require.NoError(t, err)
+		require.Equal(t, content, c)
+
+		// 2nd
+		f, err = sfs.Open(filenameR)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = afero.WriteReader(sfs, filenameW, f)
+		require.NoError(t, err)
+
+		require.NoError(t, f.Close())
+
+		// 3rd but safe
+		f, err = sfs.Open(filenameR)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		err = afero.SafeWriteReader(sfs, filenameW, f)
+		require.ErrorContains(t, err, "already exists")
+
+		require.NoError(t, f.Close())
+
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+}
+
+func TestAferoFunctionsTempDir(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.TempDir", func(t *testing.T) {
+		tmp, err := afero.TempDir(sfs, "default", "testsecret12")
+		require.NoError(t, err)
+		require.NotEmpty(t, tmp)
+
+		fi, err := sfs.Stat(tmp)
+		require.NoError(t, err)
+		require.NotNil(t, fi)
+		require.True(t, fi.IsDir())
+
+		require.NoError(t, sfs.RemoveAll(tmp))
+
+		tmp, err = afero.TempDir(sfs, "default/testsecret12", "testsecret12a")
+		require.ErrorIs(t, err, syscall.ENOTDIR)
+		require.Empty(t, tmp)
+	})
+}
+
+func TestAferoFunctionsWalk(t *testing.T) {
+	if clientset == nil {
+		t.Skip("no cluster connection available")
+	}
+
+	sfs := testFs(t)
+
+	t.Run("afero.Walk", func(t *testing.T) {
+		secretname := "default/testsecret13"
+
+		files := []string{"a", "b", "c", "d", "e"}
+
+		exp := []string{}
+
+		require.NoError(t, sfs.Mkdir(secretname, 0o0700))
+		for _, f := range files {
+			n := filepath.Join(secretname, f)
+			_, err := sfs.Create(n)
+			require.NoError(t, err)
+
+			exp = append(exp, n)
+		}
+
+		act := []string{}
+
+		err := afero.Walk(sfs, secretname, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			act = append(act, p)
+
+			return nil
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, exp, act)
+
+		require.NoError(t, sfs.RemoveAll(secretname))
+	})
+}

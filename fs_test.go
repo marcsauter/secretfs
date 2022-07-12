@@ -62,7 +62,7 @@ func TestFSCreate(t *testing.T) {
 		require.ErrorIs(t, err, afero.ErrFileExists)
 
 		err = sfs.MkdirAll(secretname, os.FileMode(0))
-		require.ErrorIs(t, err, afero.ErrFileExists)
+		require.NoError(t, err)
 	})
 
 	t.Run("Create file", func(t *testing.T) {
