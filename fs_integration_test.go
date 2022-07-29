@@ -598,6 +598,8 @@ func TestAferoFunctionsWalk(t *testing.T) {
 			exp = append(exp, n)
 		}
 
+		t.Logf("created %d files", len(exp))
+
 		act := []string{}
 
 		err := afero.Walk(sfs, secretname, func(p string, info os.FileInfo, err error) error {
@@ -613,6 +615,8 @@ func TestAferoFunctionsWalk(t *testing.T) {
 
 			return nil
 		})
+
+		t.Logf("found %d files", len(exp))
 
 		require.NoError(t, err)
 		require.Equal(t, exp, act)
