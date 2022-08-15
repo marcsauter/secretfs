@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/spf13/afero v1.9.2
 	github.com/stretchr/testify v1.8.0
-	go.uber.org/zap v1.21.0
+	go.uber.org/zap v1.22.0
 	golang.org/x/net v0.0.0-20220708220712-1185a9018129
 	k8s.io/api v0.24.3
 	k8s.io/apimachinery v0.24.3
