@@ -5,7 +5,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/marcsauter/secfs/internal/backend"
+	"github.com/postfinance/secfs/internal/backend"
 )
 
 type secretPath struct {

@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/marcsauter/secfs/internal/backend"
+	"github.com/postfinance/secfs/internal/backend"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"

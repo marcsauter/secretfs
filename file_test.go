@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/marcsauter/secfs"
-	"github.com/marcsauter/secfs/internal/backend"
+	"github.com/postfinance/secfs"
+	"github.com/postfinance/secfs/internal/backend"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )

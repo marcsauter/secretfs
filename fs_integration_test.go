@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcsauter/secfs"
+	"github.com/postfinance/secfs"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/kubernetes"
