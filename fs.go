@@ -121,6 +121,7 @@ func (sfs secfs) Open(name string) (afero.File, error) {
 // OpenFile opens a file using the given flags and the given mode.
 // https://pkg.go.dev/os#OpenFile
 // perm will be ignored because there is nothing comparable to filesystem permission for Kubernetes secrets
+//
 //nolint:gocognit,gocyclo // complex function
 func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
 	s, err := newFile(name)
