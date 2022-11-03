@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcsauter/secfs/internal/backend"
+	"github.com/postfinance/secfs/internal/backend"
 	"github.com/stretchr/testify/require"
 )
 
