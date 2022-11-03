@@ -256,6 +256,7 @@ func (b *backend) internalName(name string) string {
 }
 
 // externalName is the name of the secret used in path
+//
 //nolint:unused // logical opposite to internalName
 func (b *backend) externalName(name string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(name, b.prefix), b.suffix)
