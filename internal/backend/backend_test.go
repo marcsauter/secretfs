@@ -24,6 +24,20 @@ func TestBackend(t *testing.T) {
 		require.ErrorIs(t, err, backend.ErrNotManaged)
 	})
 
+	b = backend.New(cs,
+		backend.WithSecretPrefix(backend.FakePrefix),
+		backend.WithSecretSuffix(backend.FakeSuffix),
+		backend.WithIgnoreAnnotation(),
+	)
+
+	t.Run("get secret not managed with secfs WithIgnoreAnnotation", func(t *testing.T) {
+		s, err := newFakeSecret("default", "notmanaged", "", []byte{})
+		require.NoError(t, err)
+
+		err = b.Get(s)
+		require.NoError(t, err)
+	})
+
 	t.Run("create get", func(t *testing.T) {
 		s, err := newFakeSecret("default", "secret", "", []byte{})
 		require.NoError(t, err)

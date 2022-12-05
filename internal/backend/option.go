@@ -19,6 +19,20 @@ func WithSecretType(t corev1.SecretType) Option {
 }
 */
 
+// WithTimeout configures a custom request timeout
+func WithTimeout(t time.Duration) Option {
+	return func(b *backend) {
+		b.timeout = t
+	}
+}
+
+// WithIgnoreAnnotation configures the backend to ignore if the secret is managed with secfs or not
+func WithIgnoreAnnotation() Option {
+	return func(b *backend) {
+		b.ignoreAnnotation = true
+	}
+}
+
 // WithSecretPrefix configures a custom secret prefix
 func WithSecretPrefix(x string) Option {
 	return func(b *backend) {
@@ -30,13 +44,6 @@ func WithSecretPrefix(x string) Option {
 func WithSecretSuffix(x string) Option {
 	return func(b *backend) {
 		b.suffix = x
-	}
-}
-
-// WithTimeout configures a custom request timeout
-func WithTimeout(t time.Duration) Option {
-	return func(b *backend) {
-		b.timeout = t
 	}
 }
 

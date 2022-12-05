@@ -70,6 +70,8 @@ type backend struct {
 	suffix string
 	labels map[string]string
 
+	ignoreAnnotation bool
+
 	mu      sync.Mutex
 	timeout time.Duration
 	l       *zap.SugaredLogger
@@ -241,11 +243,11 @@ func (b *backend) get(s Metadata) (*corev1.Secret, error) {
 		ks.Data = make(map[string][]byte)
 	}
 
-	if v, ok := ks.Annotations[AnnotationKey]; ok && v == AnnotationValue {
-		return ks, nil
+	if !b.checkAnnotation(ks) {
+		return nil, ErrNotManaged
 	}
 
-	return nil, ErrNotManaged
+	return ks, nil
 }
 
 // internal
@@ -260,6 +262,18 @@ func (b *backend) internalName(name string) string {
 //nolint:unused // logical opposite to internalName
 func (b *backend) externalName(name string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(name, b.prefix), b.suffix)
+}
+
+// checkAnnotation checks if the correct annotation for secfs is set
+// if ignoreAnnotation is set to true, the annotation will not be checked
+func (b *backend) checkAnnotation(ks *corev1.Secret) bool {
+	if b.ignoreAnnotation {
+		return true
+	}
+
+	v, ok := ks.Annotations[AnnotationKey]
+
+	return ok && v == AnnotationValue
 }
 
 // helpers
