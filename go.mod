@@ -1,6 +1,6 @@
 module github.com/postfinance/secfs
 
-go 1.17
+go 1.18
 
 require (
 	github.com/spf13/afero v1.9.2
