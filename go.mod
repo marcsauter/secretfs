@@ -3,7 +3,7 @@ module github.com/postfinance/secfs
 go 1.18
 
 require (
-	github.com/spf13/afero v1.9.2
+	github.com/spf13/afero v1.9.3
 	github.com/stretchr/testify v1.8.1
 	go.uber.org/zap v1.23.0
 	golang.org/x/net v0.1.0
