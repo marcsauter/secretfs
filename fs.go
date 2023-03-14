@@ -7,6 +7,7 @@ package secfs
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -156,7 +157,7 @@ func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, 
 	f.(*File).readonly = false
 
 	if flag&os.O_APPEND > 0 {
-		if _, err := f.Seek(0, os.SEEK_END); err != nil {
+		if _, err := f.Seek(0, io.SeekEnd); err != nil {
 			return nil, err
 		}
 	}
