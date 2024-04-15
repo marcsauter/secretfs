@@ -2,8 +2,6 @@ package secfs
 
 import (
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // Option represents a functional Option
@@ -34,12 +32,5 @@ func WithSecretLabels(labels map[string]string) Option {
 func WithTimeout(t time.Duration) Option {
 	return func(s *secfs) {
 		s.timeout = t
-	}
-}
-
-// WithLogger configures a logger
-func WithLogger(l *zap.SugaredLogger) Option {
-	return func(s *secfs) {
-		s.l = l
 	}
 }

@@ -2,8 +2,6 @@ package backend
 
 import (
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // Option represents a functional Option
@@ -51,12 +49,5 @@ func WithSecretSuffix(x string) Option {
 func WithSecretLabels(labels map[string]string) Option {
 	return func(b *backend) {
 		b.labels = labels
-	}
-}
-
-// WithLogger configures a logger
-func WithLogger(l *zap.SugaredLogger) Option {
-	return func(b *backend) {
-		b.l = l
 	}
 }

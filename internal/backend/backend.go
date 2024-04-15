@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"go.uber.org/zap"
 	"golang.org/x/net/context"
 
 	corev1 "k8s.io/api/core/v1"
@@ -74,7 +73,6 @@ type backend struct {
 
 	mu      sync.Mutex
 	timeout time.Duration
-	l       *zap.SugaredLogger
 }
 
 // New returns a Backend

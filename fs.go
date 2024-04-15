@@ -16,7 +16,6 @@ import (
 
 	"github.com/postfinance/secfs/internal/backend"
 	"github.com/spf13/afero"
-	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -36,7 +35,6 @@ type secfs struct {
 	suffix  string
 	labels  map[string]string
 	timeout time.Duration
-	l       *zap.SugaredLogger
 }
 
 var _ afero.Fs = (*secfs)(nil) // https://pkg.go.dev/github.com/spf13/afero#Fs
@@ -48,7 +46,6 @@ func New(k kubernetes.Interface, opts ...Option) afero.Fs {
 		prefix:  DefaultSecretPrefix,
 		suffix:  DefaultSecretSuffix,
 		timeout: DefaultRequestTimeout,
-		l:       zap.NewNop().Sugar(),
 	}
 
 	for _, option := range opts {
@@ -60,7 +57,6 @@ func New(k kubernetes.Interface, opts ...Option) afero.Fs {
 		backend.WithSecretSuffix(s.suffix),
 		backend.WithSecretLabels(s.labels),
 		backend.WithTimeout(s.timeout),
-		backend.WithLogger(s.l),
 	)
 
 	return s
@@ -80,7 +76,7 @@ func (sfs secfs) Create(name string) (afero.File, error) {
 
 // Mkdir creates a new, empty secret
 // return an error if any happens.
-func (sfs secfs) Mkdir(name string, perm os.FileMode) error {
+func (sfs secfs) Mkdir(name string, _ os.FileMode) error {
 	s, err := newFile(name)
 	if err != nil {
 		return wrapPathError("Mkdir", name, err)
@@ -123,8 +119,8 @@ func (sfs secfs) Open(name string) (afero.File, error) {
 // https://pkg.go.dev/os#OpenFile
 // perm will be ignored because there is nothing comparable to filesystem permission for Kubernetes secrets
 //
-//nolint:gocognit,gocyclo // complex function
-func (sfs secfs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+//nolint:gocyclo // complex function
+func (sfs secfs) OpenFile(name string, flag int, _ os.FileMode) (afero.File, error) {
 	s, err := newFile(name)
 	if err != nil {
 		return nil, wrapPathError("OpenFile", name, err)
@@ -294,16 +290,16 @@ func (sfs secfs) Stat(name string) (os.FileInfo, error) {
 }
 
 // Chmod changes the mode of the named file to mode.
-func (sfs secfs) Chmod(name string, mode os.FileMode) error {
+func (sfs secfs) Chmod(_ string, _ os.FileMode) error {
 	return nil
 }
 
 // Chown changes the uid and gid of the named file.
-func (sfs secfs) Chown(name string, uid, gid int) error {
+func (sfs secfs) Chown(_ string, _, _ int) error {
 	return nil
 }
 
 // Chtimes changes the access and modification times of the named file
-func (sfs secfs) Chtimes(name string, atime, mtime time.Time) error {
+func (sfs secfs) Chtimes(_ string, _, _ time.Time) error {
 	return nil
 }
